@@ -1,6 +1,7 @@
 extends GutTest
 
 const WORLD_SCENE_PATH := "res://world/world.tscn"
+const WorldGenerator := preload("res://world/world_generator.gd")
 
 
 func test_world_uses_generated_terrain() -> void:
@@ -14,23 +15,28 @@ func test_world_uses_generated_terrain() -> void:
 	assert_not_null(terrain)
 	if terrain == null:
 		return
-	assert_lt(terrain.data.get_height(Vector3(32.0, 0.0, 32.0)), 0.25)
+	var path: PackedVector3Array = WorldGenerator.new(481516, true).stream_path()
+	var midpoint := path[path.size() / 2]
+	assert_lt(terrain.data.get_height(midpoint), midpoint.y)
 	assert_eq(world.find_children("*", "CSGShape3D", true, false).size(), 0)
 
 
-func test_world_has_water_and_separate_trees() -> void:
+func test_world_has_generated_water_and_separate_trees() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
 	var trees := world.get_node_or_null("Trees")
+	var water := world.get_node_or_null("Water") as MeshInstance3D
 	assert_not_null(trees)
-	if trees == null:
+	assert_not_null(water)
+	if trees == null or water == null:
 		return
-	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 28, 2.0))
+	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 112, 3.0))
 	_handle_terrain3d_deprecation()
 
-	assert_true(world.get_node_or_null("Water") is MeshInstance3D)
-	assert_eq(trees.get_child_count(), 28)
+	assert_true(water.mesh is ArrayMesh)
+	assert_gte(water.mesh.get_aabb().size.z, 119.0)
+	assert_eq(trees.get_child_count(), 112)
 
 
 func test_player_lands_in_world() -> void:
