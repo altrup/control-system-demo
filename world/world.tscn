@@ -1,0 +1,43 @@
+[gd_scene load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://world/world.gd" id="1_world"]
+[ext_resource type="PackedScene" path="res://player/player.tscn" id="2_player"]
+
+[sub_resource type="Environment" id="Environment_world"]
+background_mode = 1
+background_color = Color(0.5, 0.7, 0.88, 1)
+ambient_light_source = 3
+ambient_light_color = Color(0.72, 0.78, 0.84, 1)
+ambient_light_energy = 0.65
+
+[sub_resource type="StandardMaterial3D" id="Material_water"]
+transparency = 1
+albedo_color = Color(0.1, 0.45, 0.62, 0.62)
+roughness = 0.25
+
+[sub_resource type="PlaneMesh" id="Mesh_water"]
+material = SubResource("Material_water")
+size = Vector2(64, 64)
+
+[node name="World" type="Node3D"]
+script = ExtResource("1_world")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_world")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+rotation_degrees = Vector3(-55, -35, 0)
+light_energy = 1.1
+shadow_enabled = true
+
+[node name="Terrain3D" type="Terrain3D" parent="."]
+free_editor_textures = false
+
+[node name="Water" type="MeshInstance3D" parent="."]
+mesh = SubResource("Mesh_water")
+
+[node name="Trees" type="Node3D" parent="."]
+
+[node name="Player" parent="." instance=ExtResource("2_player")]
+position = Vector3(12, 4, 32)
+rotation = Vector3(0, -1.5708, 0)

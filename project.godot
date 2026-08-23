@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Control System Demo"
+run/main_scene="res://world/world.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
 
