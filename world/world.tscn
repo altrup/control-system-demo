@@ -11,9 +11,9 @@ ambient_light_color = Color(0.72, 0.78, 0.84, 1)
 ambient_light_energy = 0.9
 
 [sub_resource type="StandardMaterial3D" id="Material_water"]
-transparency = 1
-albedo_color = Color(0.1, 0.45, 0.62, 0.62)
+albedo_color = Color(0.08, 0.36, 0.62, 1)
 roughness = 0.25
+cull_mode = 2
 
 [node name="World" type="Node3D"]
 script = ExtResource("1_world")

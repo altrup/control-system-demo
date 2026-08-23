@@ -5,7 +5,6 @@ const WorldGenerator := preload("res://world/world_generator.gd")
 const TREE_SCENE := preload("res://world/tree.tscn")
 
 @export var world_seed := 481516
-@export var force_river_route := true
 @export_tool_button("Regenerate Preview") var regenerate_preview: Callable = _regenerate_preview
 
 @onready var terrain: Terrain3D = $Terrain3D
@@ -27,11 +26,11 @@ func _regenerate_preview() -> void:
 
 
 func _generate_world() -> void:
-	var generator := WorldGenerator.new(world_seed, force_river_route)
+	var generator := WorldGenerator.new(world_seed)
 	terrain.region_size = Terrain3D.SIZE_128
 	terrain.material.world_background = Terrain3DMaterial.NONE
 	terrain.material.auto_shader = true
-	terrain.material.set_shader_param("auto_slope", 10.0)
+	terrain.material.set_shader_param("auto_slope", 1.5)
 	terrain.assets = _create_terrain_assets()
 	if not Engine.is_editor_hint():
 		terrain.set_camera(camera)
@@ -42,7 +41,7 @@ func _generate_world() -> void:
 		0.0,
 		1.0
 	)
-	water.mesh = _create_water_mesh(generator.stream_path())
+	water.mesh = _create_water_mesh(generator.stream_segments())
 	_place_player(generator)
 	_place_trees(generator)
 
@@ -60,33 +59,58 @@ func _create_height_map(generator: WorldGenerator) -> Image:
 	return image
 
 
-func _create_water_mesh(path: PackedVector3Array) -> ArrayMesh:
+func _create_water_mesh(segments: Array[WorldGenerator.StreamSegment]) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
-	if path.size() < 2:
+	if segments.is_empty():
 		return mesh
 
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	for index in path.size():
-		var previous := path[maxi(0, index - 1)]
-		var following := path[mini(path.size() - 1, index + 1)]
-		var tangent := Vector2(following.x - previous.x, following.z - previous.z).normalized()
-		var side := Vector2(-tangent.y, tangent.x) * WorldGenerator.STREAM_HALF_WIDTH
-		var point := path[index] + Vector3.UP * 0.02
-		vertices.append(point + Vector3(side.x, 0.0, side.y))
-		vertices.append(point - Vector3(side.x, 0.0, side.y))
-		normals.append(Vector3.UP)
-		normals.append(Vector3.UP)
-		uvs.append(Vector2(0.0, index * 0.25))
-		uvs.append(Vector2(1.0, index * 0.25))
-	for index in path.size() - 1:
-		var left := index * 2
-		var right := left + 1
-		var next_left := left + 2
-		var next_right := left + 3
-		indices.append_array([left, next_left, right, right, next_left, next_right])
+	for segment in segments:
+		var tangent := Vector2(
+			segment.end.x - segment.start.x,
+			segment.end.z - segment.start.z
+		).normalized()
+		var perpendicular := Vector2(-tangent.y, tangent.x)
+		var start_side := perpendicular * segment.start_half_width
+		var end_side := perpendicular * segment.end_half_width
+		var start := segment.start + Vector3.UP * 0.02
+		var end := segment.end + Vector3.UP * 0.02
+		var first_vertex := vertices.size()
+		vertices.append_array([
+			start + Vector3(start_side.x, 0.0, start_side.y),
+			start - Vector3(start_side.x, 0.0, start_side.y),
+			end + Vector3(end_side.x, 0.0, end_side.y),
+			end - Vector3(end_side.x, 0.0, end_side.y),
+		])
+		normals.append_array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
+		uvs.append_array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN, Vector2.ONE])
+		indices.append_array([
+			first_vertex,
+			first_vertex + 2,
+			first_vertex + 1,
+			first_vertex + 1,
+			first_vertex + 2,
+			first_vertex + 3,
+		])
+		_append_water_cap(
+			vertices,
+			normals,
+			uvs,
+			indices,
+			segment.start + Vector3.UP * 0.025,
+			segment.start_half_width
+		)
+		_append_water_cap(
+			vertices,
+			normals,
+			uvs,
+			indices,
+			segment.end + Vector3.UP * 0.025,
+			segment.end_half_width
+		)
 
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
@@ -96,6 +120,31 @@ func _create_water_mesh(path: PackedVector3Array) -> ArrayMesh:
 	arrays[Mesh.ARRAY_INDEX] = indices
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
+
+
+func _append_water_cap(
+	vertices: PackedVector3Array,
+	normals: PackedVector3Array,
+	uvs: PackedVector2Array,
+	indices: PackedInt32Array,
+	center: Vector3,
+	radius: float
+) -> void:
+	var first_vertex := vertices.size()
+	vertices.append(center)
+	normals.append(Vector3.UP)
+	uvs.append(Vector2(0.5, 0.5))
+	for point_index in 8:
+		var angle := TAU * point_index / 8.0
+		vertices.append(center + Vector3(cos(angle), 0.0, sin(angle)) * radius)
+		normals.append(Vector3.UP)
+		uvs.append(Vector2(cos(angle), sin(angle)) * 0.5 + Vector2(0.5, 0.5))
+	for point_index in 8:
+		indices.append_array([
+			first_vertex,
+			first_vertex + 1 + (point_index + 1) % 8,
+			first_vertex + 1 + point_index,
+		])
 
 
 func _create_terrain_assets() -> Terrain3DAssets:
