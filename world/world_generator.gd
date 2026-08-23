@@ -1,6 +1,7 @@
 extends RefCounted
 
 const RiverNetwork := preload("res://world/river_network.gd")
+const RiverCarver := preload("res://world/river_carver.gd")
 
 
 class StreamSegment:
@@ -33,7 +34,6 @@ const REGION_SIZE := 256
 const HYDROLOGY_PADDING := 256
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
 const CHANNEL_FLOW_THRESHOLD := 4096.0
-const BANK_SLOPE_WIDTH := 3.0
 const TREE_COUNT := 112
 const TREE_MIN_DISTANCE := 3.5
 const RIVER_TREE_CLEARANCE := 7.0
@@ -157,43 +157,7 @@ func _build_terrain(base_heights: PackedFloat32Array) -> void:
 				(z + HYDROLOGY_PADDING) * HYDROLOGY_SIZE + x + HYDROLOGY_PADDING
 			)
 			_terrain_heights[z * REGION_SIZE + x] = base_heights[hydrology_cell]
-
-	for segment in _stream_segments:
-		_carve_segment(segment)
-
-
-func _carve_segment(segment: StreamSegment) -> void:
-	var start := Vector2(segment.start.x, segment.start.z)
-	var end := Vector2(segment.end.x, segment.end.z)
-	var delta := end - start
-	var length_squared := delta.length_squared()
-	if is_zero_approx(length_squared):
-		return
-	var bank_radius := maxf(segment.start_half_width, segment.end_half_width) + BANK_SLOPE_WIDTH
-	var minimum := Vector2(
-		maxf(0.0, minf(start.x, end.x) - bank_radius),
-		maxf(0.0, minf(start.y, end.y) - bank_radius)
-	)
-	var maximum := Vector2(
-		minf(REGION_SIZE - 1, maxf(start.x, end.x) + bank_radius),
-		minf(REGION_SIZE - 1, maxf(start.y, end.y) + bank_radius)
-	)
-	for z in range(floori(minimum.y), ceili(maximum.y) + 1):
-		for x in range(floori(minimum.x), ceili(maximum.x) + 1):
-			var position := Vector2(x, z)
-			var progress := clampf((position - start).dot(delta) / length_squared, 0.0, 1.0)
-			var closest := start + delta * progress
-			var half_width := lerpf(segment.start_half_width, segment.end_half_width, progress)
-			var distance := position.distance_to(closest)
-			if distance >= half_width + BANK_SLOPE_WIDTH:
-				continue
-			var water_height := lerpf(segment.start.y, segment.end.y, progress)
-			var depth := lerpf(segment.start_depth, segment.end_depth, progress)
-			var bed_height := water_height - depth
-			var blend := smoothstep(half_width, half_width + BANK_SLOPE_WIDTH, distance)
-			var terrain_cell := z * REGION_SIZE + x
-			var carved_height := lerpf(bed_height, _terrain_heights[terrain_cell], blend)
-			_terrain_heights[terrain_cell] = minf(_terrain_heights[terrain_cell], carved_height)
+	_terrain_heights = RiverCarver.new(REGION_SIZE).carve(_terrain_heights, _stream_branches)
 
 
 func _find_player_spawn() -> Vector2:
