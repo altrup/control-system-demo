@@ -2,6 +2,7 @@ extends GutTest
 
 const SHORELINE_PATH := "res://world/river_shoreline.gd"
 const WorldGenerator := preload("res://world/world_generator.gd")
+const SOURCE_HALF_WIDTH := 0.05
 
 
 func test_shorelines_follow_the_carved_terrain_waterline() -> void:
@@ -46,6 +47,24 @@ func test_shorelines_follow_the_carved_terrain_waterline() -> void:
 	assert_gt(checked_points, 100)
 
 
+func test_stream_sources_taper_to_the_centerline() -> void:
+	var generator := WorldGenerator.new(481516)
+	var branches: Array = load(SHORELINE_PATH).new().build(
+		generator.stream_branches(),
+		Callable(generator, "height_at")
+	)
+	var source_count := 0
+	for branch in branches:
+		var source = branch.points[0]
+		if source.bed_half_width > SOURCE_HALF_WIDTH:
+			continue
+		source_count += 1
+		assert_eq(source.left_edge, source.center)
+		assert_eq(source.right_edge, source.center)
+
+	assert_gt(source_count, 0)
+
+
 func test_water_edges_extend_under_both_banks() -> void:
 	var generator := WorldGenerator.new(481516)
 	var branches: Array = load(SHORELINE_PATH).new().build(
@@ -56,6 +75,8 @@ func test_water_edges_extend_under_both_banks() -> void:
 	for branch in branches:
 		for point in branch.points:
 			if not _is_inside_world(point.center, 6.0):
+				continue
+			if point.bed_half_width <= SOURCE_HALF_WIDTH:
 				continue
 			checked_points += 1
 			assert_gt(
@@ -68,6 +89,28 @@ func test_water_edges_extend_under_both_banks() -> void:
 			)
 
 	assert_gt(checked_points, 100)
+
+
+func test_demo_seed_does_not_flood_a_broad_basin() -> void:
+	var generator := WorldGenerator.new(481516)
+	var branches: Array = load(SHORELINE_PATH).new().build(
+		generator.stream_branches(),
+		Callable(generator, "height_at")
+	)
+	var widest_distance := 0.0
+	for branch in branches:
+		for point in branch.points:
+			if not _is_inside_world(point.center, 6.0):
+				continue
+			widest_distance = maxf(
+				widest_distance,
+				maxf(
+					_point_distance(point.center, point.left_shore),
+					_point_distance(point.center, point.right_shore)
+				)
+			)
+
+	assert_lt(widest_distance, 30.0)
 
 
 func _is_inside_world(position: Vector3, margin: float) -> bool:

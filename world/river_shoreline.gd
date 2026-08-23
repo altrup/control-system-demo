@@ -6,6 +6,7 @@ const SEARCH_STEP := 0.25
 const MAXIMUM_SEARCH_DISTANCE := WorldGenerator.REGION_SIZE * 1.5
 const BINARY_SEARCH_STEPS := 10
 const BANK_OVERLAP := 0.15
+const SOURCE_HALF_WIDTH := 0.05
 
 
 class ShorePoint:
@@ -70,12 +71,21 @@ func build(
 				stream_point.half_width,
 				height_at
 			)
+			var left_edge := left_shore + Vector3(
+				left_direction.x, 0.0, left_direction.y
+			) * BANK_OVERLAP
+			var right_edge := right_shore - Vector3(
+				left_direction.x, 0.0, left_direction.y
+			) * BANK_OVERLAP
+			if stream_point.half_width <= SOURCE_HALF_WIDTH:
+				left_edge = stream_point.position
+				right_edge = stream_point.position
 			shore_points.append(ShorePoint.new(
 				stream_point.position,
 				left_shore,
 				right_shore,
-				left_shore + Vector3(left_direction.x, 0.0, left_direction.y) * BANK_OVERLAP,
-				right_shore - Vector3(left_direction.x, 0.0, left_direction.y) * BANK_OVERLAP,
+				left_edge,
+				right_edge,
 				stream_point.half_width
 			))
 		shore_branches.append(ShoreBranch.new(shore_points))

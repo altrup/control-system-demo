@@ -53,7 +53,7 @@ class StreamBranch:
 const REGION_SIZE := 128
 const HYDROLOGY_PADDING := 32
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
-const CHANNEL_FLOW_THRESHOLD := 600.0
+const CHANNEL_FLOW_THRESHOLD := 1200.0
 const MINIMUM_STREAM_HALF_WIDTH := 0.65
 const MAXIMUM_STREAM_HALF_WIDTH := 2.5
 const MINIMUM_STREAM_DEPTH := 0.4
@@ -148,9 +148,12 @@ func _generate_landscape() -> void:
 			raw_heights[z * HYDROLOGY_SIZE + x] = _base_height_at(position)
 
 	var drainage_heights := _fill_depressions(raw_heights)
+	var terrain_heights := _breach_depressions(raw_heights, drainage_heights)
+	drainage_heights = _fill_depressions(terrain_heights)
 	var downstream := _flow_directions(drainage_heights)
 	var accumulation := _flow_accumulation(drainage_heights, downstream)
 	var water_heights := _water_surface_heights(
+		terrain_heights,
 		drainage_heights,
 		downstream,
 		accumulation
@@ -158,7 +161,11 @@ func _generate_landscape() -> void:
 	var raw_segments := _build_stream_segments(water_heights, downstream, accumulation)
 	_stream_branches = _build_stream_branches(raw_segments)
 	_stream_segments = _flatten_stream_branches(_stream_branches)
-	_build_terrain(raw_heights)
+	_build_terrain(terrain_heights)
+	for _iteration in 2:
+		_fit_stream_heights_to_banks(_stream_branches, terrain_heights)
+		_stream_segments = _flatten_stream_branches(_stream_branches)
+		_build_terrain(terrain_heights)
 	_player_spawn = _find_player_spawn()
 
 
@@ -196,6 +203,56 @@ func _fill_depressions(raw_heights: PackedFloat32Array) -> PackedFloat32Array:
 	return filled
 
 
+func _breach_depressions(
+	raw_heights: PackedFloat32Array,
+	filled_heights: PackedFloat32Array
+) -> PackedFloat32Array:
+	var breached := raw_heights.duplicate()
+	var raw_downstream := _flow_directions(raw_heights)
+	var filled_downstream := _flow_directions(filled_heights)
+	for z in range(1, HYDROLOGY_SIZE - 1):
+		for x in range(1, HYDROLOGY_SIZE - 1):
+			var sink := z * HYDROLOGY_SIZE + x
+			if raw_downstream[sink] >= 0:
+				continue
+			if filled_heights[sink] <= raw_heights[sink] + DEPRESSION_SLOPE:
+				continue
+			_breach_sink(sink, breached, raw_heights, filled_downstream)
+	return breached
+
+
+func _breach_sink(
+	sink: int,
+	breached: PackedFloat32Array,
+	raw_heights: PackedFloat32Array,
+	downstream: PackedInt32Array
+) -> void:
+	var path := PackedInt32Array([sink])
+	var distances := PackedFloat32Array([0.0])
+	var cell := sink
+	while downstream[cell] >= 0:
+		var next := downstream[cell]
+		var distance := distances[-1] + _world_position(cell).distance_to(_world_position(next))
+		path.append(next)
+		distances.append(distance)
+		cell = next
+
+	var path_length := distances[-1]
+	if path_length <= 0.0:
+		return
+	var end_height := minf(
+		raw_heights[path[-1]],
+		raw_heights[sink] - CHANNEL_MINIMUM_DROP * path_length
+	)
+	for index in path.size():
+		var target_height := lerpf(
+			raw_heights[sink],
+			end_height,
+			distances[index] / path_length
+		)
+		breached[path[index]] = minf(breached[path[index]], target_height)
+
+
 func _flow_directions(heights: PackedFloat32Array) -> PackedInt32Array:
 	var downstream := PackedInt32Array()
 	downstream.resize(heights.size())
@@ -231,6 +288,7 @@ func _flow_accumulation(
 
 
 func _water_surface_heights(
+	terrain_heights: PackedFloat32Array,
 	drainage_heights: PackedFloat32Array,
 	downstream: PackedInt32Array,
 	accumulation: PackedFloat32Array
@@ -242,13 +300,26 @@ func _water_surface_heights(
 		if accumulation[cell] < CHANNEL_FLOW_THRESHOLD:
 			continue
 		if is_inf(water_heights[cell]):
-			water_heights[cell] = drainage_heights[cell] - WATER_SURFACE_OFFSET
+			water_heights[cell] = terrain_heights[cell] - WATER_SURFACE_OFFSET
 		var next := downstream[cell]
 		if next >= 0:
 			var descending_height := water_heights[cell] - CHANNEL_MINIMUM_DROP
-			var natural_height := drainage_heights[next] - WATER_SURFACE_OFFSET
+			var natural_height := terrain_heights[next] - WATER_SURFACE_OFFSET
 			water_heights[next] = minf(water_heights[next], minf(descending_height, natural_height))
 	return water_heights
+
+
+func _height_from_map(heights: PackedFloat32Array, position: Vector2) -> float:
+	var map_position := position + Vector2(HYDROLOGY_PADDING, HYDROLOGY_PADDING)
+	var x0 := clampi(floori(map_position.x), 0, HYDROLOGY_SIZE - 1)
+	var z0 := clampi(floori(map_position.y), 0, HYDROLOGY_SIZE - 1)
+	var x1 := mini(x0 + 1, HYDROLOGY_SIZE - 1)
+	var z1 := mini(z0 + 1, HYDROLOGY_SIZE - 1)
+	var x_blend := map_position.x - floorf(map_position.x)
+	var z_blend := map_position.y - floorf(map_position.y)
+	var top := lerpf(heights[z0 * HYDROLOGY_SIZE + x0], heights[z0 * HYDROLOGY_SIZE + x1], x_blend)
+	var bottom := lerpf(heights[z1 * HYDROLOGY_SIZE + x0], heights[z1 * HYDROLOGY_SIZE + x1], x_blend)
+	return lerpf(top, bottom, z_blend)
 
 
 func _cells_by_height(heights: PackedFloat32Array) -> Array[int]:
@@ -302,6 +373,58 @@ func _build_stream_branches(segments: Array[StreamSegment]) -> Array[StreamBranc
 			continue
 		branches.append(_trace_stream_branch(segment, outgoing, incoming_count))
 	return branches
+
+
+func _fit_stream_heights_to_banks(
+	branches: Array[StreamBranch],
+	terrain_heights: PackedFloat32Array
+) -> void:
+	for branch in branches:
+		for index in branch.points.size():
+			var point := branch.points[index]
+			var previous: Vector3 = branch.points[maxi(0, index - 1)].position
+			var following: Vector3 = branch.points[mini(branch.points.size() - 1, index + 1)].position
+			var tangent := Vector2(following.x - previous.x, following.z - previous.z).normalized()
+			var normal := Vector2(-tangent.y, tangent.x)
+			var center := Vector2(point.position.x, point.position.z)
+			var bank_distance := point.half_width + BANK_SLOPE_WIDTH
+			point.position.y = minf(
+				point.position.y,
+				minf(
+					_landscape_height_at(terrain_heights, center + normal * bank_distance),
+					_landscape_height_at(terrain_heights, center - normal * bank_distance)
+				) - WATER_SURFACE_OFFSET
+			)
+
+	for _iteration in branches.size() + 1:
+		var junction_heights: Dictionary[Vector2, float] = {}
+		for branch in branches:
+			for point in [branch.points[0], branch.points[-1]]:
+				var position := Vector2(point.position.x, point.position.z)
+				junction_heights[position] = minf(
+					junction_heights.get(position, INF),
+					point.position.y
+				)
+		for branch in branches:
+			var first_position := Vector2(branch.points[0].position.x, branch.points[0].position.z)
+			branch.points[0].position.y = junction_heights[first_position]
+			for index in range(1, branch.points.size()):
+				var previous := branch.points[index - 1]
+				var point := branch.points[index]
+				var distance := Vector2(
+					point.position.x - previous.position.x,
+					point.position.z - previous.position.z
+				).length()
+				point.position.y = minf(
+					point.position.y,
+					previous.position.y - CHANNEL_MINIMUM_DROP * distance
+				)
+
+
+func _landscape_height_at(terrain_heights: PackedFloat32Array, position: Vector2) -> float:
+	if _is_inside_world(position):
+		return height_at(position)
+	return _height_from_map(terrain_heights, position)
 
 
 func _trace_stream_branch(
