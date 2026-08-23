@@ -2,6 +2,7 @@ extends GutTest
 
 const WORLD_SCENE_PATH := "res://world/world.tscn"
 const WorldGenerator := preload("res://world/world_generator.gd")
+const RiverShoreline := preload("res://world/river_shoreline.gd")
 
 
 func test_world_uses_generated_terrain() -> void:
@@ -68,6 +69,56 @@ func test_generated_water_has_no_folded_or_degenerate_triangles() -> void:
 	assert_gt(minimum_upward_area, 0.0001)
 
 
+func test_generated_water_reaches_the_sampled_banks() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var water := world.get_node_or_null("Water") as MeshInstance3D
+	assert_not_null(water)
+	if water == null:
+		return
+	assert_true(await wait_until(
+		func() -> bool: return water.mesh is ArrayMesh and water.mesh.get_surface_count() > 0,
+		3.0
+	))
+	_handle_terrain3d_deprecation()
+	var generator := WorldGenerator.new(481516)
+	var shore_branches := RiverShoreline.new().build(
+		generator.stream_branches(),
+		Callable(generator, "height_at")
+	)
+	var widest_point: RiverShoreline.ShorePoint
+	var widest_distance := 0.0
+	for branch in shore_branches:
+		for point in branch.points:
+			if not _is_inside_world(point.center, 6.0):
+				continue
+			var distance := maxf(
+				_point_distance(point.center, point.left_shore),
+				_point_distance(point.center, point.right_shore)
+			)
+			if distance > widest_distance:
+				widest_point = point
+				widest_distance = distance
+
+	assert_not_null(widest_point)
+	if widest_point == null:
+		return
+	var arrays := water.mesh.surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+	assert_true(_mesh_covers(
+		widest_point.center.lerp(widest_point.left_edge, 0.95),
+		vertices,
+		indices
+	))
+	assert_true(_mesh_covers(
+		widest_point.center.lerp(widest_point.right_edge, 0.95),
+		vertices,
+		indices
+	))
+
+
 func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
 	var world := _instantiate_world()
 	if world == null:
@@ -120,3 +171,37 @@ func _handle_terrain3d_deprecation() -> void:
 	for error: GutTrackedError in get_errors():
 		if error.contains_text("instance_reset_physics_interpolation() is deprecated"):
 			error.handled = true
+
+
+func _is_inside_world(position: Vector3, margin: float) -> bool:
+	return (
+		position.x >= margin
+		and position.z >= margin
+		and position.x <= WorldGenerator.REGION_SIZE - 1 - margin
+		and position.z <= WorldGenerator.REGION_SIZE - 1 - margin
+	)
+
+
+func _point_distance(first: Vector3, second: Vector3) -> float:
+	return Vector2(first.x, first.z).distance_to(Vector2(second.x, second.z))
+
+
+func _mesh_covers(
+	point: Vector3,
+	vertices: PackedVector3Array,
+	indices: PackedInt32Array
+) -> bool:
+	var target := Vector2(point.x, point.z)
+	for index in range(0, indices.size(), 3):
+		var first := Vector2(vertices[indices[index]].x, vertices[indices[index]].z)
+		var second := Vector2(vertices[indices[index + 1]].x, vertices[indices[index + 1]].z)
+		var third := Vector2(vertices[indices[index + 2]].x, vertices[indices[index + 2]].z)
+		var first_side := (second - first).cross(target - first)
+		var second_side := (third - second).cross(target - second)
+		var third_side := (first - third).cross(target - third)
+		if (
+			(first_side >= -0.001 and second_side >= -0.001 and third_side >= -0.001)
+			or (first_side <= 0.001 and second_side <= 0.001 and third_side <= 0.001)
+		):
+			return true
+	return false
