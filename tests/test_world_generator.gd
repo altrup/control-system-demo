@@ -65,6 +65,38 @@ func test_natural_drainage_keeps_tributaries() -> void:
 	assert_true(incoming.values().any(func(count: int) -> bool: return count > 1))
 
 
+func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(481516)
+	assert_true(generator.has_method("stream_branches"))
+	if not generator.has_method("stream_branches"):
+		return
+	var branches: Array = generator.call("stream_branches")
+	var segments: Array = generator.call("stream_segments")
+	var reached_boundary := false
+	var longest_branch := 0
+	var sharpest_turn := 1.0
+	for branch in branches:
+		longest_branch = maxi(longest_branch, branch.points.size())
+		var first: Vector3 = branch.points[0].position
+		var last: Vector3 = branch.points[-1].position
+		reached_boundary = reached_boundary or _is_near_world_boundary(first)
+		reached_boundary = reached_boundary or _is_near_world_boundary(last)
+		for index in range(1, branch.points.size() - 1):
+			var previous: Vector3 = branch.points[index - 1].position
+			var current: Vector3 = branch.points[index].position
+			var following: Vector3 = branch.points[index + 1].position
+			var incoming_direction := Vector2(current.x - previous.x, current.z - previous.z).normalized()
+			var outgoing_direction := Vector2(following.x - current.x, following.z - current.z).normalized()
+			sharpest_turn = minf(sharpest_turn, incoming_direction.dot(outgoing_direction))
+
+	assert_gt(branches.size(), 1)
+	assert_lt(branches.size() * 4, segments.size())
+	assert_gt(longest_branch, 20)
+	assert_gt(sharpest_turn, 0.7)
+	assert_true(reached_boundary)
+
+
 func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(481516)
@@ -75,9 +107,15 @@ func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 	assert_false(segments.is_empty())
 	if segments.is_empty():
 		return
-	var narrow = segments[0]
-	var wide = segments[0]
-	for segment in segments:
+	var playable_segments := segments.filter(
+		func(segment) -> bool: return _is_inside_world(segment.start)
+	)
+	assert_false(playable_segments.is_empty())
+	if playable_segments.is_empty():
+		return
+	var narrow = playable_segments[0]
+	var wide = playable_segments[0]
+	for segment in playable_segments:
 		if segment.start_half_width < narrow.start_half_width:
 			narrow = segment
 		if segment.start_half_width > wide.start_half_width:
@@ -153,3 +191,11 @@ func _stream_signature(generator: RefCounted) -> PackedFloat32Array:
 			segment.end_depth,
 		])
 	return signature
+
+
+func _is_near_world_boundary(position: Vector3) -> bool:
+	return position.x <= 1.0 or position.z <= 1.0 or position.x >= 126.0 or position.z >= 126.0
+
+
+func _is_inside_world(position: Vector3) -> bool:
+	return position.x >= 0.0 and position.z >= 0.0 and position.x <= 127.0 and position.z <= 127.0

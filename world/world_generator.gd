@@ -26,6 +26,30 @@ class StreamSegment:
 		end_depth = segment_end_depth
 
 
+class StreamPoint:
+	extends RefCounted
+
+	var position: Vector3
+	var half_width: float
+	var depth: float
+
+	func _init(point_position: Vector3, point_half_width: float, point_depth: float) -> void:
+		position = point_position
+		half_width = point_half_width
+		depth = point_depth
+
+
+class StreamBranch:
+	extends RefCounted
+
+	var curve: Curve3D
+	var points: Array[StreamPoint]
+
+	func _init(branch_curve: Curve3D, branch_points: Array[StreamPoint]) -> void:
+		curve = branch_curve
+		points = branch_points
+
+
 const REGION_SIZE := 128
 const HYDROLOGY_PADDING := 32
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
@@ -39,6 +63,8 @@ const WATER_SURFACE_OFFSET := 0.08
 const DEPRESSION_SLOPE := 0.001
 const CHANNEL_MINIMUM_DROP := 0.005
 const CHANNEL_MEANDER_DISTANCE := 3.0
+const CURVE_SUBDIVISIONS := 4
+const MIN_CONTROL_TURN_DOT := 0.5
 const TREE_COUNT := 112
 const TREE_MIN_DISTANCE := 3.5
 const RIVER_TREE_CLEARANCE := 7.0
@@ -51,6 +77,7 @@ var _channel_noise := FastNoiseLite.new()
 var _world_seed: int
 var _terrain_heights := PackedFloat32Array()
 var _stream_segments: Array[StreamSegment] = []
+var _stream_branches: Array[StreamBranch] = []
 var _player_spawn := FALLBACK_PLAYER_SPAWN
 
 
@@ -93,6 +120,10 @@ func stream_segments() -> Array[StreamSegment]:
 	return _stream_segments
 
 
+func stream_branches() -> Array[StreamBranch]:
+	return _stream_branches
+
+
 func player_spawn() -> Vector2:
 	return _player_spawn
 
@@ -130,7 +161,9 @@ func _generate_landscape() -> void:
 		downstream,
 		accumulation
 	)
-	_build_stream_segments(water_heights, downstream, accumulation)
+	var raw_segments := _build_stream_segments(water_heights, downstream, accumulation)
+	_stream_branches = _build_stream_branches(raw_segments)
+	_stream_segments = _flatten_stream_branches(_stream_branches)
 	_build_terrain(raw_heights)
 	_player_spawn = _find_player_spawn()
 
@@ -240,7 +273,8 @@ func _build_stream_segments(
 	water_heights: PackedFloat32Array,
 	downstream: PackedInt32Array,
 	accumulation: PackedFloat32Array
-) -> void:
+) -> Array[StreamSegment]:
+	var segments: Array[StreamSegment] = []
 	for cell in water_heights.size():
 		var next := downstream[cell]
 		if next < 0 or accumulation[cell] < CHANNEL_FLOW_THRESHOLD:
@@ -251,7 +285,7 @@ func _build_stream_segments(
 			continue
 		var start := Vector3(cell_position.x, water_heights[cell], cell_position.y)
 		var end := Vector3(next_position.x, water_heights[next], next_position.y)
-		_stream_segments.append(StreamSegment.new(
+		segments.append(StreamSegment.new(
 			start,
 			end,
 			_channel_half_width(accumulation[cell]),
@@ -259,6 +293,128 @@ func _build_stream_segments(
 			_channel_depth(accumulation[cell]),
 			_channel_depth(accumulation[next])
 		))
+	return segments
+
+
+func _build_stream_branches(segments: Array[StreamSegment]) -> Array[StreamBranch]:
+	var outgoing: Dictionary[Vector3, StreamSegment] = {}
+	var incoming_count: Dictionary[Vector3, int] = {}
+	for segment in segments:
+		outgoing[segment.start] = segment
+		incoming_count[segment.end] = incoming_count.get(segment.end, 0) + 1
+
+	var branches: Array[StreamBranch] = []
+	for segment in segments:
+		if incoming_count.get(segment.start, 0) == 1:
+			continue
+		branches.append(_trace_stream_branch(segment, outgoing, incoming_count))
+	return branches
+
+
+func _trace_stream_branch(
+	first_segment: StreamSegment,
+	outgoing: Dictionary[Vector3, StreamSegment],
+	incoming_count: Dictionary[Vector3, int]
+) -> StreamBranch:
+	var control_points: Array[StreamPoint] = []
+	var source_width := first_segment.start_half_width
+	var source_position := Vector2(first_segment.start.x, first_segment.start.z)
+	if incoming_count.get(first_segment.start, 0) == 0 and _is_inside_world(source_position, 1.0):
+		source_width = 0.05
+	control_points.append(StreamPoint.new(
+		first_segment.start,
+		source_width,
+		first_segment.start_depth
+	))
+	var segment := first_segment
+	while segment != null:
+		control_points.append(StreamPoint.new(
+			segment.end,
+			segment.end_half_width,
+			segment.end_depth
+		))
+		if incoming_count.get(segment.end, 0) != 1 or not outgoing.has(segment.end):
+			break
+		segment = outgoing[segment.end]
+	return _smooth_stream_branch(control_points)
+
+
+func _smooth_stream_branch(control_points: Array[StreamPoint]) -> StreamBranch:
+	control_points = _remove_stream_hairpins(control_points)
+	var curve := Curve3D.new()
+	for point in control_points:
+		curve.add_point(point.position)
+	for index in control_points.size():
+		var current := control_points[index].position
+		var previous := control_points[maxi(0, index - 1)].position
+		var following := control_points[mini(control_points.size() - 1, index + 1)].position
+		var direction := following - previous
+		direction.y = 0.0
+		direction = direction.normalized()
+		var incoming_length := Vector2(current.x, current.z).distance_to(Vector2(previous.x, previous.z))
+		var outgoing_length := Vector2(current.x, current.z).distance_to(Vector2(following.x, following.z))
+		curve.set_point_in(index, -direction * incoming_length / 3.0)
+		curve.set_point_out(index, direction * outgoing_length / 3.0)
+
+	var sampled_points: Array[StreamPoint] = []
+	for segment_index in range(control_points.size() - 1):
+		for step in CURVE_SUBDIVISIONS:
+			var progress := step / float(CURVE_SUBDIVISIONS)
+			var position := curve.sample(segment_index, progress)
+			position.y = lerpf(
+				control_points[segment_index].position.y,
+				control_points[segment_index + 1].position.y,
+				progress
+			)
+			sampled_points.append(StreamPoint.new(
+				position,
+				lerpf(
+					control_points[segment_index].half_width,
+					control_points[segment_index + 1].half_width,
+					progress
+				),
+				lerpf(
+					control_points[segment_index].depth,
+					control_points[segment_index + 1].depth,
+					progress
+				)
+			))
+	sampled_points.append(control_points[-1])
+	return StreamBranch.new(curve, sampled_points)
+
+
+func _remove_stream_hairpins(control_points: Array[StreamPoint]) -> Array[StreamPoint]:
+	var simplified: Array[StreamPoint] = control_points.duplicate()
+	var index := 1
+	while index < simplified.size() - 1:
+		var previous: Vector3 = simplified[index - 1].position
+		var current: Vector3 = simplified[index].position
+		var following: Vector3 = simplified[index + 1].position
+		var incoming := Vector2(current.x - previous.x, current.z - previous.z).normalized()
+		var outgoing := Vector2(following.x - current.x, following.z - current.z).normalized()
+		if incoming.dot(outgoing) < MIN_CONTROL_TURN_DOT:
+			simplified.remove_at(index)
+			index = maxi(1, index - 1)
+		else:
+			index += 1
+	return simplified
+
+
+func _flatten_stream_branches(branches: Array[StreamBranch]) -> Array[StreamSegment]:
+	var segments: Array[StreamSegment] = []
+	for branch in branches:
+		for index in range(branch.points.size() - 1):
+			var start := branch.points[index]
+			var end := branch.points[index + 1]
+			segments.append(StreamSegment.new(
+				start.position,
+				end.position,
+				start.half_width,
+				end.half_width,
+				start.depth,
+				end.depth
+			))
+	return segments
 
 
 func _build_terrain(drainage_heights: PackedFloat32Array) -> void:
