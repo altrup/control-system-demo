@@ -68,6 +68,28 @@ func test_generated_water_has_no_folded_or_degenerate_triangles() -> void:
 	assert_gt(minimum_upward_area, 0.0001)
 
 
+func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var water := world.get_node_or_null("Water") as MeshInstance3D
+	assert_not_null(water)
+	if water == null:
+		return
+	assert_true(await wait_until(
+		func() -> bool: return water.mesh is ArrayMesh and water.mesh.get_surface_count() > 0,
+		3.0
+	))
+	_handle_terrain3d_deprecation()
+	var arrays := water.mesh.surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var point_count := 0
+	for branch in WorldGenerator.new(481516).stream_branches():
+		point_count += branch.points.size()
+
+	assert_lt(vertices.size(), point_count * 6)
+
+
 func test_player_lands_in_world() -> void:
 	var world := _instantiate_world()
 	if world == null:

@@ -41,7 +41,7 @@ func _generate_world() -> void:
 		0.0,
 		1.0
 	)
-	water.mesh = _create_water_mesh(generator.stream_segments())
+	water.mesh = _create_water_mesh(generator.stream_branches())
 	_place_player(generator)
 	_place_trees(generator)
 
@@ -59,57 +59,132 @@ func _create_height_map(generator: WorldGenerator) -> Image:
 	return image
 
 
-func _create_water_mesh(segments: Array[WorldGenerator.StreamSegment]) -> ArrayMesh:
+func _create_water_mesh(branches: Array[WorldGenerator.StreamBranch]) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
-	if segments.is_empty():
+	if branches.is_empty():
 		return mesh
 
 	var vertices := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var indices := PackedInt32Array()
-	for segment in segments:
-		var tangent := Vector2(
-			segment.end.x - segment.start.x,
-			segment.end.z - segment.start.z
-		).normalized()
-		var perpendicular := Vector2(-tangent.y, tangent.x)
-		var start_side := perpendicular * segment.start_half_width
-		var end_side := perpendicular * segment.end_half_width
-		var start := segment.start + Vector3.UP * 0.02
-		var end := segment.end + Vector3.UP * 0.02
+	var cap_radii: Dictionary[Vector3, float] = {}
+	for branch in branches:
+		var half_widths := PackedFloat32Array()
+		var miters := PackedVector2Array()
+		var miter_denominators := PackedFloat32Array()
+		half_widths.resize(branch.points.size())
+		miters.resize(branch.points.size())
+		miter_denominators.resize(branch.points.size())
+		for point_index in branch.points.size():
+			var point := branch.points[point_index]
+			var current := Vector2(point.position.x, point.position.z)
+			var previous_position: Vector3 = branch.points[maxi(0, point_index - 1)].position
+			var following_position: Vector3 = branch.points[mini(branch.points.size() - 1, point_index + 1)].position
+			var previous := Vector2(previous_position.x, previous_position.z)
+			var following := Vector2(following_position.x, following_position.z)
+			var incoming := (current - previous).normalized()
+			var outgoing := (following - current).normalized()
+			if point_index == 0:
+				incoming = outgoing
+			elif point_index == branch.points.size() - 1:
+				outgoing = incoming
+			var half_width: float = point.half_width
+			var turn_sine_half := sqrt(maxf(0.0, (1.0 - incoming.dot(outgoing)) * 0.5))
+			if turn_sine_half > 0.001:
+				half_width = minf(
+					half_width,
+					minf(current.distance_to(previous), current.distance_to(following))
+						* 0.45 / turn_sine_half
+				)
+			var incoming_normal := Vector2(-incoming.y, incoming.x)
+			var outgoing_normal := Vector2(-outgoing.y, outgoing.x)
+			var miter := (incoming_normal + outgoing_normal).normalized()
+			half_widths[point_index] = half_width
+			miters[point_index] = miter
+			miter_denominators[point_index] = maxf(miter.dot(incoming_normal), 0.25)
+		for point_index in range(1, branch.points.size()):
+			var current: Vector3 = branch.points[point_index].position
+			var previous: Vector3 = branch.points[point_index - 1].position
+			half_widths[point_index] = minf(
+				half_widths[point_index],
+				half_widths[point_index - 1]
+					+ Vector2(current.x, current.z).distance_to(Vector2(previous.x, previous.z)) * 0.5
+			)
+		for point_index in range(branch.points.size() - 2, -1, -1):
+			var current: Vector3 = branch.points[point_index].position
+			var following: Vector3 = branch.points[point_index + 1].position
+			half_widths[point_index] = minf(
+				half_widths[point_index],
+				half_widths[point_index + 1]
+					+ Vector2(current.x, current.z).distance_to(Vector2(following.x, following.z)) * 0.5
+			)
+
 		var first_vertex := vertices.size()
-		vertices.append_array([
-			start + Vector3(start_side.x, 0.0, start_side.y),
-			start - Vector3(start_side.x, 0.0, start_side.y),
-			end + Vector3(end_side.x, 0.0, end_side.y),
-			end - Vector3(end_side.x, 0.0, end_side.y),
-		])
-		normals.append_array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
-		uvs.append_array([Vector2.ZERO, Vector2.RIGHT, Vector2.DOWN, Vector2.ONE])
-		indices.append_array([
-			first_vertex,
-			first_vertex + 2,
-			first_vertex + 1,
-			first_vertex + 1,
-			first_vertex + 2,
-			first_vertex + 3,
-		])
+		var distance := 0.0
+		for point_index in branch.points.size():
+			var point := branch.points[point_index]
+			var previous: Vector3 = branch.points[maxi(0, point_index - 1)].position
+			var center: Vector3 = point.position + Vector3.UP * 0.02
+			var side := miters[point_index] * half_widths[point_index] / miter_denominators[point_index]
+			if point_index > 0:
+				distance += Vector2(center.x, center.z).distance_to(Vector2(previous.x, previous.z))
+			vertices.append(center + Vector3(side.x, 0.0, side.y))
+			vertices.append(center - Vector3(side.x, 0.0, side.y))
+			normals.append_array([Vector3.UP, Vector3.UP])
+			uvs.append_array([Vector2(0.0, distance * 0.1), Vector2(1.0, distance * 0.1)])
+			if point_index > 0:
+				var previous_left := first_vertex + (point_index - 1) * 2
+				var current_left := first_vertex + point_index * 2
+				var current_diagonal_area := minf(
+					(vertices[current_left] - vertices[previous_left]).cross(
+						vertices[previous_left + 1] - vertices[previous_left]
+					).y,
+					(vertices[current_left] - vertices[previous_left + 1]).cross(
+						vertices[current_left + 1] - vertices[previous_left + 1]
+					).y
+				)
+				var alternate_diagonal_area := minf(
+					(vertices[current_left] - vertices[previous_left]).cross(
+						vertices[current_left + 1] - vertices[previous_left]
+					).y,
+					(vertices[current_left + 1] - vertices[previous_left]).cross(
+						vertices[previous_left + 1] - vertices[previous_left]
+					).y
+				)
+				if alternate_diagonal_area > current_diagonal_area:
+					indices.append_array([
+						previous_left,
+						current_left,
+						current_left + 1,
+						previous_left,
+						current_left + 1,
+						previous_left + 1,
+					])
+				else:
+					indices.append_array([
+						previous_left,
+						current_left,
+						previous_left + 1,
+						previous_left + 1,
+						current_left,
+						current_left + 1,
+					])
+		for endpoint_index in [0, branch.points.size() - 1]:
+			var endpoint := branch.points[endpoint_index]
+			cap_radii[endpoint.position] = maxf(
+				cap_radii.get(endpoint.position, 0.0),
+				endpoint.half_width
+			)
+
+	for center in cap_radii:
 		_append_water_cap(
 			vertices,
 			normals,
 			uvs,
 			indices,
-			segment.start + Vector3.UP * 0.025,
-			segment.start_half_width
-		)
-		_append_water_cap(
-			vertices,
-			normals,
-			uvs,
-			indices,
-			segment.end + Vector3.UP * 0.025,
-			segment.end_half_width
+			center + Vector3.UP * 0.025,
+			cap_radii[center]
 		)
 
 	var arrays := []
