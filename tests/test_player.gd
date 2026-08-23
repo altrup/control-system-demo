@@ -3,6 +3,36 @@ extends GutTest
 const PLAYER_SCENE_PATH := "res://player/player.tscn"
 
 
+func test_space_is_bound_to_jump() -> void:
+	assert_true(InputMap.has_action("jump"))
+	if not InputMap.has_action("jump"):
+		return
+
+	var has_space := false
+	for event: InputEvent in InputMap.action_get_events("jump"):
+		if event is InputEventKey and event.physical_keycode == KEY_SPACE:
+			has_space = true
+	assert_true(has_space)
+
+
+func test_jump_only_applies_while_grounded() -> void:
+	var player := _instantiate_player()
+	if player == null:
+		return
+
+	assert_true(player.has_method("apply_jump"))
+	if not player.has_method("apply_jump"):
+		return
+
+	player.velocity.y = 0.0
+	player.call("apply_jump", true)
+	assert_gt(player.velocity.y, 0.0)
+
+	player.velocity.y = 0.0
+	player.call("apply_jump", false)
+	assert_eq(player.velocity.y, 0.0)
+
+
 func test_movement_follows_player_facing() -> void:
 	var player := _instantiate_player()
 	if player == null:

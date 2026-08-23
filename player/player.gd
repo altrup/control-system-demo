@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 @export var walking_speed := 5.0
 @export var crouching_speed := 3.0
+@export var jump_velocity := 4.5
 @export var mouse_sensitivity := 0.002
 @export var standing_height := 1.8
 @export var crouching_height := 1.1
@@ -41,6 +42,8 @@ func _physics_process(delta: float) -> void:
 
 	if not is_on_floor():
 		velocity.y -= gravity * delta
+	if Input.is_action_just_pressed("jump"):
+		apply_jump(is_on_floor())
 
 	var input := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	var direction := movement_direction(input)
@@ -52,6 +55,11 @@ func _physics_process(delta: float) -> void:
 
 func movement_direction(input: Vector2) -> Vector3:
 	return (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
+
+
+func apply_jump(is_grounded: bool) -> void:
+	if is_grounded:
+		velocity.y = jump_velocity
 
 
 func set_crouching(is_crouching: bool, delta: float) -> void:
