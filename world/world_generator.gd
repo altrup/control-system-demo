@@ -30,8 +30,8 @@ class StreamSegment:
 		end_depth = segment_end_depth
 
 
-const REGION_SIZE := 256
-const HYDROLOGY_PADDING := 256
+const REGION_SIZE := 128
+const HYDROLOGY_PADDING := 128
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
 const CHANNEL_FLOW_THRESHOLD := 4096.0
 const TREE_COUNT := 112

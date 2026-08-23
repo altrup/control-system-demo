@@ -6,15 +6,15 @@ This spec supersedes the terrain-generation and water sections of `2026-08-23-ge
 
 ## Goal
 
-Generate a deterministic 256 by 256 metre forest arena from a fixed seed. A suitable seed can contain a shallow stream that enters and leaves the visible world. Terrain carving and the water surface must come from the same river network, so every visible channel contains water and water stays inside its banks.
+Generate a deterministic 128 by 128 metre forest arena from a fixed seed. A suitable seed can contain a shallow stream that enters and leaves the visible world. Terrain carving and the water surface must come from the same river network, so every visible channel contains water and water stays inside its banks.
 
 The user selects the seed through the existing editor preview. The generator does not force a river, search for a crop, or select the globally largest channel. A seed without a valid crossing stream produces a riverless arena.
 
 ## Generation Domain
 
-Generate the visible terrain at one metre per sample over `[0, 256)` on both horizontal axes. Analyze hydrology with 256 metres of padding on each side. The hydrology domain is therefore 768 by 768 samples over `[-256, 512)`.
+Generate the visible terrain at one metre per sample over `[0, 128)` on both horizontal axes. Analyze hydrology with 128 metres of padding on each side. The hydrology domain is therefore 384 by 384 samples over `[-128, 256)`.
 
-The padding supplies upstream drainage before a stream enters the visible world. Only the central 256 by 256 samples are sent to Terrain3D. Changing the visual world size must not change base-terrain samples at existing world coordinates.
+The padding supplies upstream drainage before a stream enters the visible world. Only the central 128 by 128 samples are sent to Terrain3D. Changing the visual world size must not change base-terrain samples at existing world coordinates.
 
 Generation remains synchronous and happens once per seed. Measure generation time on the current machine. The initial target is at most five seconds for an editor preview. Optimize the hydrology pass if it exceeds that target; do not reduce padding without a separate design decision.
 
@@ -83,7 +83,7 @@ Scale tree count by visible area. Trees and the player must remain outside carve
 Automated tests must prove:
 
 - The same seed produces identical base terrain, channel profiles, carved terrain, and tree positions.
-- The visible height field is 256 by 256 and hydrology uses the full 256 metre padding.
+- The visible height field is 128 by 128 and hydrology uses the full 128 metre padding.
 - Routing changes do not modify visible base terrain.
 - Every rendered component crosses into and out of the visible world.
 - No rendered branch starts inside the visible world.

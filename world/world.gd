@@ -6,7 +6,7 @@ const RiverShoreline := preload("res://world/river_shoreline.gd")
 const RiverMeshBuilder := preload("res://world/river_mesh_builder.gd")
 const TREE_SCENE := preload("res://world/tree.tscn")
 
-@export var world_seed := 481516
+@export var world_seed := 103
 @export_tool_button("Regenerate Preview") var regenerate_preview: Callable = _regenerate_preview
 
 @onready var terrain: Terrain3D = $Terrain3D
@@ -30,7 +30,7 @@ func _regenerate_preview() -> void:
 func _generate_world() -> void:
 	water.mesh = null
 	var generator := WorldGenerator.new(world_seed)
-	terrain.region_size = Terrain3D.SIZE_256
+	terrain.region_size = Terrain3D.SIZE_128
 	terrain.material.world_background = Terrain3DMaterial.NONE
 	terrain.material.auto_shader = true
 	terrain.material.set_shader_param("auto_slope", 1.5)

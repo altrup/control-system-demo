@@ -5,7 +5,7 @@ const WorldGenerator := preload("res://world/world_generator.gd")
 const RiverShoreline := preload("res://world/river_shoreline.gd")
 
 
-func test_world_uses_256_metre_terrain() -> void:
+func test_world_uses_128_metre_terrain() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
@@ -15,7 +15,7 @@ func test_world_uses_256_metre_terrain() -> void:
 		return
 	_handle_terrain3d_deprecation()
 
-	assert_eq(terrain.region_size, Terrain3D.SIZE_256)
+	assert_eq(terrain.region_size, Terrain3D.SIZE_128)
 
 
 func test_world_uses_generated_terrain() -> void:
@@ -26,7 +26,7 @@ func test_world_uses_generated_terrain() -> void:
 	assert_not_null(terrain)
 	if terrain == null:
 		return
-	var segments: Array = WorldGenerator.new(481516).stream_segments()
+	var segments: Array = WorldGenerator.new(103).stream_segments()
 	var midpoint: Vector3 = segments[segments.size() / 2].start
 	assert_true(await wait_until(
 		func() -> bool: return not is_nan(terrain.data.get_height(midpoint)),
@@ -95,7 +95,7 @@ func test_generated_water_reaches_the_sampled_banks() -> void:
 		3.0
 	))
 	_handle_terrain3d_deprecation()
-	var generator := WorldGenerator.new(481516)
+	var generator := WorldGenerator.new(103)
 	var shore_branches := RiverShoreline.new().build(
 		generator.stream_branches(),
 		Callable(generator, "height_at")
@@ -148,7 +148,7 @@ func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
 	var arrays := water.mesh.surface_get_arrays(0)
 	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 	var point_count := 0
-	for branch in WorldGenerator.new(481516).stream_branches():
+	for branch in WorldGenerator.new(103).stream_branches():
 		point_count += branch.points.size()
 
 	assert_lt(vertices.size(), point_count * 6)
