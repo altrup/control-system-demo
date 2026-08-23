@@ -62,7 +62,6 @@ const BANK_SLOPE_WIDTH := 3.0
 const WATER_SURFACE_OFFSET := 0.08
 const DEPRESSION_SLOPE := 0.001
 const CHANNEL_MINIMUM_DROP := 0.005
-const CHANNEL_MEANDER_DISTANCE := 3.0
 const CURVE_SUBDIVISIONS := 4
 const MIN_CONTROL_TURN_DOT := 0.5
 const TREE_COUNT := 112
@@ -73,7 +72,6 @@ const PLAYER_SPAWN_CLEARANCE := 6.0
 
 var _terrain_noise := FastNoiseLite.new()
 var _detail_noise := FastNoiseLite.new()
-var _channel_noise := FastNoiseLite.new()
 var _world_seed: int
 var _terrain_heights := PackedFloat32Array()
 var _stream_segments: Array[StreamSegment] = []
@@ -93,9 +91,6 @@ func _init(world_seed: int) -> void:
 	_detail_noise.frequency = 0.045
 	_detail_noise.fractal_type = FastNoiseLite.FRACTAL_FBM
 	_detail_noise.fractal_octaves = 3
-	_channel_noise.seed = world_seed + 2
-	_channel_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	_channel_noise.frequency = 0.025
 	_generate_landscape()
 
 
@@ -156,7 +151,6 @@ func _generate_landscape() -> void:
 	var downstream := _flow_directions(drainage_heights)
 	var accumulation := _flow_accumulation(drainage_heights, downstream)
 	var water_heights := _water_surface_heights(
-		raw_heights,
 		drainage_heights,
 		downstream,
 		accumulation
@@ -237,23 +231,22 @@ func _flow_accumulation(
 
 
 func _water_surface_heights(
-	raw_heights: PackedFloat32Array,
 	drainage_heights: PackedFloat32Array,
 	downstream: PackedInt32Array,
 	accumulation: PackedFloat32Array
 ) -> PackedFloat32Array:
 	var water_heights := PackedFloat32Array()
-	water_heights.resize(raw_heights.size())
+	water_heights.resize(drainage_heights.size())
 	water_heights.fill(INF)
 	for cell in _cells_by_height(drainage_heights):
 		if accumulation[cell] < CHANNEL_FLOW_THRESHOLD:
 			continue
 		if is_inf(water_heights[cell]):
-			water_heights[cell] = raw_heights[cell] - WATER_SURFACE_OFFSET
+			water_heights[cell] = drainage_heights[cell] - WATER_SURFACE_OFFSET
 		var next := downstream[cell]
 		if next >= 0:
 			var descending_height := water_heights[cell] - CHANNEL_MINIMUM_DROP
-			var natural_height := raw_heights[next] - WATER_SURFACE_OFFSET
+			var natural_height := drainage_heights[next] - WATER_SURFACE_OFFSET
 			water_heights[next] = minf(water_heights[next], minf(descending_height, natural_height))
 	return water_heights
 
@@ -279,8 +272,8 @@ func _build_stream_segments(
 		var next := downstream[cell]
 		if next < 0 or accumulation[cell] < CHANNEL_FLOW_THRESHOLD:
 			continue
-		var cell_position := _channel_position(cell, downstream)
-		var next_position := _channel_position(next, downstream)
+		var cell_position := _world_position(cell)
+		var next_position := _world_position(next)
 		if not _is_inside_world(cell_position) and not _is_inside_world(next_position):
 			continue
 		var start := Vector3(cell_position.x, water_heights[cell], cell_position.y)
@@ -524,17 +517,6 @@ func _world_position(cell: int) -> Vector2:
 		cell % HYDROLOGY_SIZE - HYDROLOGY_PADDING,
 		cell / HYDROLOGY_SIZE - HYDROLOGY_PADDING
 	)
-
-
-func _channel_position(cell: int, downstream: PackedInt32Array) -> Vector2:
-	var position := _world_position(cell)
-	var next := downstream[cell]
-	if next < 0:
-		return position
-	var tangent := (_world_position(next) - position).normalized()
-	var perpendicular := Vector2(-tangent.y, tangent.x)
-	var meander := _channel_noise.get_noise_2d(position.x, position.y)
-	return position + perpendicular * meander * CHANNEL_MEANDER_DISTANCE
 
 
 func _is_inside_world(position: Vector2, margin: float = 0.0) -> bool:
