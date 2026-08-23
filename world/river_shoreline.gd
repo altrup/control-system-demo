@@ -1,6 +1,7 @@
 extends RefCounted
 
 const WorldGenerator := preload("res://world/world_generator.gd")
+const RiverNetwork := preload("res://world/river_network.gd")
 
 const SEARCH_STEP := 0.25
 const MAXIMUM_SEARCH_DISTANCE := WorldGenerator.REGION_SIZE * 1.5
@@ -45,7 +46,7 @@ class ShoreBranch:
 
 
 func build(
-	stream_branches: Array[WorldGenerator.StreamBranch],
+	stream_branches: Array[RiverNetwork.ChannelBranch],
 	height_at: Callable
 ) -> Array[ShoreBranch]:
 	var shore_branches: Array[ShoreBranch] = []
