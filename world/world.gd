@@ -38,6 +38,9 @@ func _generate_world() -> void:
 	if not Engine.is_editor_hint():
 		terrain.set_camera(camera)
 	await get_tree().process_frame
+	for region: Terrain3DRegion in terrain.data.get_regions_active():
+		terrain.data.remove_region(region, false)
+	terrain.data.update_maps(Terrain3DRegion.TYPE_MAX, true, false)
 	terrain.data.import_images(
 		[_create_height_map(generator), null, null],
 		Vector3.ZERO,

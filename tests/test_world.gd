@@ -37,6 +37,22 @@ func test_world_uses_generated_terrain() -> void:
 	assert_eq(world.find_children("*", "CSGShape3D", true, false).size(), 0)
 
 
+func test_regeneration_removes_stale_terrain_regions() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var terrain := world.get_node("Terrain3D") as Terrain3D
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 1, 3.0))
+	var stale_region := terrain.data.get_regions_active()[0].duplicate(true) as Terrain3DRegion
+	stale_region.location = Vector2i(1, 0)
+	assert_eq(terrain.data.add_region(stale_region), OK)
+	assert_eq(terrain.data.get_region_count(), 2)
+
+	await world.call("_generate_world")
+
+	assert_eq(terrain.data.get_region_count(), 1)
+
+
 func test_world_has_generated_water_and_separate_trees() -> void:
 	var world := _instantiate_world()
 	if world == null:
