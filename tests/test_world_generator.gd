@@ -49,6 +49,23 @@ func test_hydrology_only_erodes_the_initial_terrain() -> void:
 	assert_lte(largest_raise, 0.01)
 
 
+func test_routing_does_not_carve_dry_terrain() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(481516)
+	var segments: Array = generator.call("stream_segments")
+	var deepest_dry_cut := 0.0
+	for x in range(0, 256, 4):
+		for z in range(0, 256, 4):
+			var position := Vector2(x, z)
+			if _distance_to_stream(position, segments) <= 8.0:
+				continue
+			var generated_height := generator.call("height_at", position) as float
+			var initial_height := generator.call("_base_height_at", position) as float
+			deepest_dry_cut = maxf(deepest_dry_cut, initial_height - generated_height)
+
+	assert_lte(deepest_dry_cut, 0.01)
+
+
 func test_natural_drainage_keeps_tributaries() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(481516)

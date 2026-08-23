@@ -5,6 +5,19 @@ const WorldGenerator := preload("res://world/world_generator.gd")
 const RiverShoreline := preload("res://world/river_shoreline.gd")
 
 
+func test_world_uses_256_metre_terrain() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var terrain := world.get_node_or_null("Terrain3D") as Terrain3D
+	assert_not_null(terrain)
+	if terrain == null:
+		return
+	_handle_terrain3d_deprecation()
+
+	assert_eq(terrain.region_size, Terrain3D.SIZE_256)
+
+
 func test_world_uses_generated_terrain() -> void:
 	var world := _instantiate_world()
 	if world == null:

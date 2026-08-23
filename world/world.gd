@@ -30,7 +30,7 @@ func _regenerate_preview() -> void:
 func _generate_world() -> void:
 	water.mesh = null
 	var generator := WorldGenerator.new(world_seed)
-	terrain.region_size = Terrain3D.SIZE_128
+	terrain.region_size = Terrain3D.SIZE_256
 	terrain.material.world_background = Terrain3DMaterial.NONE
 	terrain.material.auto_shader = true
 	terrain.material.set_shader_param("auto_slope", 1.5)

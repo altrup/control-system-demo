@@ -50,8 +50,8 @@ class StreamBranch:
 		points = branch_points
 
 
-const REGION_SIZE := 128
-const HYDROLOGY_PADDING := 32
+const REGION_SIZE := 256
+const HYDROLOGY_PADDING := 256
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
 const CHANNEL_FLOW_THRESHOLD := 1200.0
 const MINIMUM_STREAM_HALF_WIDTH := 0.65
@@ -147,25 +147,25 @@ func _generate_landscape() -> void:
 			var position := Vector2(x - HYDROLOGY_PADDING, z - HYDROLOGY_PADDING)
 			raw_heights[z * HYDROLOGY_SIZE + x] = _base_height_at(position)
 
-	var drainage_heights := _fill_depressions(raw_heights)
-	var terrain_heights := _breach_depressions(raw_heights, drainage_heights)
-	drainage_heights = _fill_depressions(terrain_heights)
+	var ascending_cells: Array[int] = []
+	var drainage_heights := _fill_depressions(raw_heights, ascending_cells)
+	ascending_cells.reverse()
 	var downstream := _flow_directions(drainage_heights)
-	var accumulation := _flow_accumulation(drainage_heights, downstream)
+	var accumulation := _flow_accumulation(downstream, ascending_cells)
 	var water_heights := _water_surface_heights(
-		terrain_heights,
-		drainage_heights,
+		raw_heights,
 		downstream,
-		accumulation
+		accumulation,
+		ascending_cells
 	)
 	var raw_segments := _build_stream_segments(water_heights, downstream, accumulation)
 	_stream_branches = _build_stream_branches(raw_segments)
 	_stream_segments = _flatten_stream_branches(_stream_branches)
-	_build_terrain(terrain_heights)
+	_build_terrain(raw_heights)
 	for _iteration in 2:
-		_fit_stream_heights_to_banks(_stream_branches, terrain_heights)
+		_fit_stream_heights_to_banks(_stream_branches, raw_heights)
 		_stream_segments = _flatten_stream_branches(_stream_branches)
-		_build_terrain(terrain_heights)
+		_build_terrain(raw_heights)
 	_player_spawn = _find_player_spawn()
 
 
@@ -175,7 +175,10 @@ func _base_height_at(position: Vector2) -> float:
 	return 9.0 + broad_hills + ground_detail
 
 
-func _fill_depressions(raw_heights: PackedFloat32Array) -> PackedFloat32Array:
+func _fill_depressions(
+	raw_heights: PackedFloat32Array,
+	ascending_cells: Array[int]
+) -> PackedFloat32Array:
 	var filled := raw_heights.duplicate()
 	var visited := PackedByteArray()
 	visited.resize(filled.size())
@@ -190,6 +193,7 @@ func _fill_depressions(raw_heights: PackedFloat32Array) -> PackedFloat32Array:
 
 	while not heap.is_empty():
 		var cell := _heap_pop(heap, filled)
+		ascending_cells.append(cell)
 		var cell_x := cell % HYDROLOGY_SIZE
 		var cell_z: int = cell / HYDROLOGY_SIZE
 		for neighbor_z in range(maxi(0, cell_z - 1), mini(HYDROLOGY_SIZE - 1, cell_z + 1) + 1):
@@ -201,56 +205,6 @@ func _fill_depressions(raw_heights: PackedFloat32Array) -> PackedFloat32Array:
 				filled[neighbor] = maxf(filled[neighbor], filled[cell] + DEPRESSION_SLOPE)
 				_heap_push(heap, neighbor, filled)
 	return filled
-
-
-func _breach_depressions(
-	raw_heights: PackedFloat32Array,
-	filled_heights: PackedFloat32Array
-) -> PackedFloat32Array:
-	var breached := raw_heights.duplicate()
-	var raw_downstream := _flow_directions(raw_heights)
-	var filled_downstream := _flow_directions(filled_heights)
-	for z in range(1, HYDROLOGY_SIZE - 1):
-		for x in range(1, HYDROLOGY_SIZE - 1):
-			var sink := z * HYDROLOGY_SIZE + x
-			if raw_downstream[sink] >= 0:
-				continue
-			if filled_heights[sink] <= raw_heights[sink] + DEPRESSION_SLOPE:
-				continue
-			_breach_sink(sink, breached, raw_heights, filled_downstream)
-	return breached
-
-
-func _breach_sink(
-	sink: int,
-	breached: PackedFloat32Array,
-	raw_heights: PackedFloat32Array,
-	downstream: PackedInt32Array
-) -> void:
-	var path := PackedInt32Array([sink])
-	var distances := PackedFloat32Array([0.0])
-	var cell := sink
-	while downstream[cell] >= 0:
-		var next := downstream[cell]
-		var distance := distances[-1] + _world_position(cell).distance_to(_world_position(next))
-		path.append(next)
-		distances.append(distance)
-		cell = next
-
-	var path_length := distances[-1]
-	if path_length <= 0.0:
-		return
-	var end_height := minf(
-		raw_heights[path[-1]],
-		raw_heights[sink] - CHANNEL_MINIMUM_DROP * path_length
-	)
-	for index in path.size():
-		var target_height := lerpf(
-			raw_heights[sink],
-			end_height,
-			distances[index] / path_length
-		)
-		breached[path[index]] = minf(breached[path[index]], target_height)
 
 
 func _flow_directions(heights: PackedFloat32Array) -> PackedInt32Array:
@@ -275,13 +229,13 @@ func _flow_directions(heights: PackedFloat32Array) -> PackedInt32Array:
 
 
 func _flow_accumulation(
-	heights: PackedFloat32Array,
-	downstream: PackedInt32Array
+	downstream: PackedInt32Array,
+	descending_cells: Array[int]
 ) -> PackedFloat32Array:
 	var accumulation := PackedFloat32Array()
-	accumulation.resize(heights.size())
+	accumulation.resize(downstream.size())
 	accumulation.fill(1.0)
-	for cell in _cells_by_height(heights):
+	for cell in descending_cells:
 		if downstream[cell] >= 0:
 			accumulation[downstream[cell]] += accumulation[cell]
 	return accumulation
@@ -289,14 +243,14 @@ func _flow_accumulation(
 
 func _water_surface_heights(
 	terrain_heights: PackedFloat32Array,
-	drainage_heights: PackedFloat32Array,
 	downstream: PackedInt32Array,
-	accumulation: PackedFloat32Array
+	accumulation: PackedFloat32Array,
+	descending_cells: Array[int]
 ) -> PackedFloat32Array:
 	var water_heights := PackedFloat32Array()
-	water_heights.resize(drainage_heights.size())
+	water_heights.resize(terrain_heights.size())
 	water_heights.fill(INF)
-	for cell in _cells_by_height(drainage_heights):
+	for cell in descending_cells:
 		if accumulation[cell] < CHANNEL_FLOW_THRESHOLD:
 			continue
 		if is_inf(water_heights[cell]):
@@ -320,18 +274,6 @@ func _height_from_map(heights: PackedFloat32Array, position: Vector2) -> float:
 	var top := lerpf(heights[z0 * HYDROLOGY_SIZE + x0], heights[z0 * HYDROLOGY_SIZE + x1], x_blend)
 	var bottom := lerpf(heights[z1 * HYDROLOGY_SIZE + x0], heights[z1 * HYDROLOGY_SIZE + x1], x_blend)
 	return lerpf(top, bottom, z_blend)
-
-
-func _cells_by_height(heights: PackedFloat32Array) -> Array[int]:
-	var cells: Array[int] = []
-	cells.resize(heights.size())
-	for cell in heights.size():
-		cells[cell] = cell
-	cells.sort_custom(
-		func(first: int, second: int) -> bool: return heights[first] > heights[second]
-	)
-	return cells
-
 
 func _build_stream_segments(
 	water_heights: PackedFloat32Array,
@@ -589,9 +531,25 @@ func _find_player_spawn() -> Vector2:
 	if _stream_segments.is_empty():
 		return FALLBACK_PLAYER_SPAWN
 	var world_center := Vector2(REGION_SIZE * 0.5, REGION_SIZE * 0.5)
-	var best_spawn := FALLBACK_PLAYER_SPAWN
-	var best_score := INF
-	for segment in _stream_segments:
+	var nearby_segments: Array[StreamSegment] = _stream_segments.duplicate()
+	nearby_segments.sort_custom(func(first: StreamSegment, second: StreamSegment) -> bool:
+		var first_midpoint := Vector2(
+			(first.start.x + first.end.x) * 0.5,
+			(first.start.z + first.end.z) * 0.5
+		)
+		var second_midpoint := Vector2(
+			(second.start.x + second.end.x) * 0.5,
+			(second.start.z + second.end.z) * 0.5
+		)
+		var first_score := first_midpoint.distance_squared_to(world_center)
+		var second_score := second_midpoint.distance_squared_to(world_center)
+		if not is_equal_approx(first_score, second_score):
+			return first_score < second_score
+		if not is_equal_approx(first.start.x, second.start.x):
+			return first.start.x < second.start.x
+		return first.start.z < second.start.z
+	)
+	for segment in nearby_segments:
 		var start := Vector2(segment.start.x, segment.start.z)
 		var end := Vector2(segment.end.x, segment.end.z)
 		var midpoint := (start + end) * 0.5
@@ -603,11 +561,8 @@ func _find_player_spawn() -> Vector2:
 			var clearance := _distance_to_stream(candidate)
 			if clearance < 10.0 or clearance > 18.0:
 				continue
-			var score: float = candidate.distance_squared_to(world_center)
-			if score < best_score:
-				best_score = score
-				best_spawn = candidate
-	return best_spawn
+			return candidate
+	return FALLBACK_PLAYER_SPAWN
 
 
 func _is_valid_tree_position(candidate: Vector2, existing_positions: Array[Vector2]) -> bool:
