@@ -180,6 +180,14 @@ func test_trees_respect_world_clearances() -> void:
 			assert_gte(position.distance_to(positions[other_index]), 3.5)
 
 
+func test_tree_count_scales_with_visible_area() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(103)
+
+	assert_eq(generator.call("tree_count_for_region_size", 128), 112)
+	assert_eq(generator.call("tree_count_for_region_size", 256), 448)
+
+
 func _distance_to_stream(position: Vector2, segments: Array) -> float:
 	var distance := INF
 	for segment in segments:

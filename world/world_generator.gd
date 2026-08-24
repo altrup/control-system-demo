@@ -34,7 +34,7 @@ const REGION_SIZE := 128
 const HYDROLOGY_PADDING := 128
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
 const CHANNEL_FLOW_THRESHOLD := 4096.0
-const TREE_COUNT := 112
+const TREE_DENSITY := 112.0 / (128.0 * 128.0)
 const TREE_MIN_DISTANCE := 3.5
 const RIVER_TREE_CLEARANCE := 7.0
 const FALLBACK_PLAYER_SPAWN := Vector2(16.0, 64.0)
@@ -97,8 +97,9 @@ func tree_positions() -> Array[Vector2]:
 	var random := RandomNumberGenerator.new()
 	random.seed = _world_seed
 	var positions: Array[Vector2] = []
+	var target_count := tree_count_for_region_size(REGION_SIZE)
 	var attempts := 0
-	while positions.size() < TREE_COUNT and attempts < TREE_COUNT * 100:
+	while positions.size() < target_count and attempts < target_count * 100:
 		attempts += 1
 		var candidate := Vector2(
 			random.randf_range(4.0, REGION_SIZE - 4.0),
@@ -107,6 +108,10 @@ func tree_positions() -> Array[Vector2]:
 		if _is_valid_tree_position(candidate, positions):
 			positions.append(candidate)
 	return positions
+
+
+static func tree_count_for_region_size(region_size: int) -> int:
+	return roundi(region_size * region_size * TREE_DENSITY)
 
 
 func _generate_landscape() -> void:
