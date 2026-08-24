@@ -1,59 +1,76 @@
 extends GutTest
 
 const BUILDER_PATH := "res://world/river_mesh_builder.gd"
-const RiverShoreline := preload("res://world/river_shoreline.gd")
+const RiverNetwork := preload("res://world/river_network.gd")
 
 
-func test_crossing_channels_have_complete_valid_surfaces() -> void:
-	assert_true(ResourceLoader.exists(BUILDER_PATH))
-	if not ResourceLoader.exists(BUILDER_PATH):
-		return
-	var branches: Array[RiverShoreline.ShoreBranch] = [
-		_branch([
-			_point(Vector3(-2.0, 0.0, 0.0), Vector3(-2.0, 0.0, 1.0), Vector3(-2.0, 0.0, -1.0)),
-			_point(Vector3(2.0, 0.0, 0.0), Vector3(2.0, 0.0, 1.0), Vector3(2.0, 0.0, -1.0)),
-		]),
-		_branch([
-			_point(Vector3(0.0, 0.0, -2.0), Vector3(-1.0, 0.0, -2.0), Vector3(1.0, 0.0, -2.0)),
-			_point(Vector3(0.0, 0.0, 2.0), Vector3(-1.0, 0.0, 2.0), Vector3(1.0, 0.0, 2.0)),
-		]),
-	]
-	var mesh := load(BUILDER_PATH).new().build(branches) as ArrayMesh
+func test_builds_profile_widths_and_clips_to_world_bounds() -> void:
+	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
+		_point(Vector3(-1.0, 2.0, 4.0)),
+		_point(Vector3(4.0, 1.5, 4.0)),
+		_point(Vector3(9.0, 1.0, 4.0)),
+	])]
+	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
+
 	assert_eq(mesh.get_surface_count(), 1)
-	if mesh.get_surface_count() != 1:
-		return
 	var arrays := mesh.surface_get_arrays(0)
 	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
-	var area := 0.0
-	for index in range(0, indices.size(), 3):
-		var triangle_area := (
-			(vertices[indices[index + 1]] - vertices[indices[index]])
-				.cross(vertices[indices[index + 2]] - vertices[indices[index]]).y
-		) * 0.5
-		assert_gt(triangle_area, 0.0001)
-		area += triangle_area
-
-	assert_gte(area, 12.0)
-	assert_lte(area, 16.01)
+	assert_false(indices.is_empty())
+	for vertex in vertices:
+		assert_gte(vertex.x, 0.0)
+		assert_lte(vertex.x, 8.0)
+		assert_gte(vertex.z, 0.0)
+		assert_lte(vertex.z, 8.0)
+	assert_true(vertices.has(Vector3(4.0, 1.52, 4.0)))
+	assert_true(vertices.has(Vector3(4.0, 1.52, 3.0)))
+	assert_true(vertices.has(Vector3(4.0, 1.52, 5.0)))
 
 
-func test_mesh_keeps_centerline_height_samples() -> void:
-	var points: Array[RiverShoreline.ShorePoint] = [
-		_point(Vector3(-2.0, 1.0, 0.0), Vector3(-2.0, 1.0, 1.0), Vector3(-2.0, 1.0, -1.0)),
-		_point(Vector3(0.0, 2.0, 0.0), Vector3(0.0, 2.0, 1.0), Vector3(0.0, 2.0, -1.0)),
-		_point(Vector3(2.0, 3.0, 0.0), Vector3(2.0, 3.0, 1.0), Vector3(2.0, 3.0, -1.0)),
+func test_fills_confluence_between_three_branch_ribbons() -> void:
+	var junction := _point(Vector3(4.0, 1.0, 4.0))
+	var branches: Array[RiverNetwork.ChannelBranch] = [
+		RiverNetwork.ChannelBranch.new([
+			_point(Vector3(1.0, 1.2, 1.0)),
+			junction,
+		]),
+		RiverNetwork.ChannelBranch.new([
+			_point(Vector3(7.0, 1.2, 1.0)),
+			junction,
+		]),
+		RiverNetwork.ChannelBranch.new([
+			junction,
+			_point(Vector3(4.0, 0.8, 7.0)),
+		]),
 	]
-	var branches: Array[RiverShoreline.ShoreBranch] = [_branch(points)]
-	var mesh := load(BUILDER_PATH).new().build(branches) as ArrayMesh
-	var vertices := mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX] as PackedVector3Array
-	for point in points:
-		assert_true(vertices.has(point.center + Vector3.UP * 0.02))
+	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
+	var arrays := mesh.surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+
+	for point in [Vector2(4.0, 3.7), Vector2(3.7, 4.0), Vector2(4.3, 4.0), Vector2(4.0, 4.3)]:
+		assert_true(_mesh_covers(point, vertices, indices))
 
 
-func _point(center: Vector3, left: Vector3, right: Vector3) -> RiverShoreline.ShorePoint:
-	return RiverShoreline.ShorePoint.new(center, left, right, left, right, 1.0)
+func _point(position: Vector3) -> RiverNetwork.ChannelPoint:
+	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector2(2.0, 0.5))
 
 
-func _branch(points: Array[RiverShoreline.ShorePoint]) -> RiverShoreline.ShoreBranch:
-	return RiverShoreline.ShoreBranch.new(points)
+func _mesh_covers(
+	point: Vector2,
+	vertices: PackedVector3Array,
+	indices: PackedInt32Array
+) -> bool:
+	for index in range(0, indices.size(), 3):
+		var first := Vector2(vertices[indices[index]].x, vertices[indices[index]].z)
+		var second := Vector2(vertices[indices[index + 1]].x, vertices[indices[index + 1]].z)
+		var third := Vector2(vertices[indices[index + 2]].x, vertices[indices[index + 2]].z)
+		var first_side := (second - first).cross(point - first)
+		var second_side := (third - second).cross(point - second)
+		var third_side := (first - third).cross(point - third)
+		if (
+			(first_side >= -0.001 and second_side >= -0.001 and third_side >= -0.001)
+			or (first_side <= 0.001 and second_side <= 0.001 and third_side <= 0.001)
+		):
+			return true
+	return false

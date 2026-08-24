@@ -2,7 +2,6 @@
 extends Node3D
 
 const WorldGenerator := preload("res://world/world_generator.gd")
-const RiverShoreline := preload("res://world/river_shoreline.gd")
 const RiverMeshBuilder := preload("res://world/river_mesh_builder.gd")
 const TREE_SCENE := preload("res://world/tree.tscn")
 
@@ -47,11 +46,9 @@ func _generate_world() -> void:
 		0.0,
 		1.0
 	)
-	var shore_branches := RiverShoreline.new().build(
-		generator.stream_branches(),
-		Callable(generator, "height_at")
+	water.mesh = RiverMeshBuilder.new(WorldGenerator.REGION_SIZE).build(
+		generator.stream_branches()
 	)
-	water.mesh = RiverMeshBuilder.new().build(shore_branches)
 	_place_player(generator)
 	_place_trees(generator)
 
