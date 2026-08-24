@@ -52,4 +52,4 @@ func _horizontal_branch() -> RiverNetwork.ChannelBranch:
 
 
 func _point(position: Vector3) -> RiverNetwork.ChannelPoint:
-	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector2(2.0, 0.5))
+	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector3(2.0, 0.5, 2.0))

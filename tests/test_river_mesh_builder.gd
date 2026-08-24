@@ -53,7 +53,7 @@ func test_fills_confluence_between_three_branch_ribbons() -> void:
 
 
 func _point(position: Vector3) -> RiverNetwork.ChannelPoint:
-	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector2(2.0, 0.5))
+	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector3(2.0, 0.5, 2.0))
 
 
 func _mesh_covers(

@@ -1,6 +1,7 @@
 extends GutTest
 
 const NETWORK_PATH := "res://world/river_network.gd"
+const RiverParameters := preload("res://world/river_parameters.gd")
 
 
 func test_keeps_only_boundary_crossing_channels() -> void:
@@ -8,7 +9,7 @@ func test_keeps_only_boundary_crossing_channels() -> void:
 	if not ResourceLoader.exists(NETWORK_PATH):
 		return
 	var network_script := load(NETWORK_PATH) as GDScript
-	var network: RefCounted = network_script.new(4, 3, 2.0)
+	var network: RefCounted = network_script.new(4, 3, _parameters(2.0))
 	var branches: Array = network.call("build", _east_facing_slope())
 
 	assert_false(branches.is_empty())
@@ -22,9 +23,9 @@ func test_channel_dimensions_grow_with_accumulated_area() -> void:
 	if not ResourceLoader.exists(NETWORK_PATH):
 		return
 	var network_script := load(NETWORK_PATH) as GDScript
-	var network: RefCounted = network_script.new(4, 2, 2.0)
-	var small := network.call("dimensions_for_area", 2.0) as Vector2
-	var large := network.call("dimensions_for_area", 128.0) as Vector2
+	var network: RefCounted = network_script.new(4, 2, _parameters(2.0))
+	var small := network.call("dimensions_for_area", 2.0) as Vector3
+	var large := network.call("dimensions_for_area", 128.0) as Vector3
 
 	assert_gt(large.x, small.x)
 	assert_gt(large.y, small.y)
@@ -34,7 +35,7 @@ func test_channel_dimensions_grow_with_accumulated_area() -> void:
 
 func test_water_never_rises_downstream() -> void:
 	var network_script := load(NETWORK_PATH) as GDScript
-	var network: RefCounted = network_script.new(4, 3, 2.0)
+	var network: RefCounted = network_script.new(4, 3, _parameters(2.0))
 	var branches: Array = network.call("build", _east_facing_slope())
 
 	for branch in branches:
@@ -51,3 +52,9 @@ func _east_facing_slope() -> PackedFloat32Array:
 		for x in 10:
 			heights[z * 10 + x] = 10.0 - x + z * 0.001
 	return heights
+
+
+func _parameters(threshold: float) -> RiverParameters:
+	var parameters := RiverParameters.new()
+	parameters.channel_threshold = threshold
+	return parameters

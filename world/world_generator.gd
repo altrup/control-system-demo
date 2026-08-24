@@ -2,6 +2,7 @@ extends RefCounted
 
 const RiverNetwork := preload("res://world/river_network.gd")
 const RiverCarver := preload("res://world/river_carver.gd")
+const RiverParameters := preload("res://world/river_parameters.gd")
 
 
 class StreamSegment:
@@ -33,7 +34,6 @@ class StreamSegment:
 const REGION_SIZE := 128
 const HYDROLOGY_PADDING := 128
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
-const CHANNEL_FLOW_THRESHOLD := 4096.0
 const TREE_DENSITY := 112.0 / (128.0 * 128.0)
 const TREE_MIN_DISTANCE := 3.5
 const RIVER_TREE_CLEARANCE := 7.0
@@ -43,14 +43,18 @@ const PLAYER_SPAWN_CLEARANCE := 6.0
 var _terrain_noise := FastNoiseLite.new()
 var _detail_noise := FastNoiseLite.new()
 var _world_seed: int
+var _river_parameters: RiverParameters
 var _terrain_heights := PackedFloat32Array()
 var _stream_segments: Array[StreamSegment] = []
 var _stream_branches: Array[RiverNetwork.ChannelBranch] = []
 var _player_spawn := FALLBACK_PLAYER_SPAWN
 
 
-func _init(world_seed: int) -> void:
+func _init(world_seed: int, river_parameters: RiverParameters = null) -> void:
 	_world_seed = world_seed
+	_river_parameters = (
+		river_parameters if river_parameters != null else RiverParameters.new()
+	)
 	_terrain_noise.seed = world_seed
 	_terrain_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	_terrain_noise.frequency = 0.011
@@ -122,7 +126,7 @@ func _generate_landscape() -> void:
 			var position := Vector2(x - HYDROLOGY_PADDING, z - HYDROLOGY_PADDING)
 			raw_heights[z * HYDROLOGY_SIZE + x] = _base_height_at(position)
 
-	var network := RiverNetwork.new(REGION_SIZE, HYDROLOGY_PADDING, CHANNEL_FLOW_THRESHOLD)
+	var network := RiverNetwork.new(REGION_SIZE, HYDROLOGY_PADDING, _river_parameters)
 	_stream_branches = network.build(raw_heights)
 	_stream_segments = _flatten_stream_branches(_stream_branches)
 	_build_terrain(raw_heights)

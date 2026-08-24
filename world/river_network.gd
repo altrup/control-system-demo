@@ -1,5 +1,7 @@
 extends RefCounted
 
+const RiverParameters := preload("res://world/river_parameters.gd")
+
 class ChannelPoint:
 	extends RefCounted
 
@@ -9,12 +11,12 @@ class ChannelPoint:
 	var depth: float
 	var bank_falloff: float
 
-	func _init(point_position: Vector3, area: float, dimensions: Vector2) -> void:
+	func _init(point_position: Vector3, area: float, dimensions: Vector3) -> void:
 		position = point_position
 		accumulated_area = area
 		half_width = dimensions.x * 0.5
 		depth = dimensions.y
-		bank_falloff = clampf(depth * 4.0, 2.0, 4.8)
+		bank_falloff = dimensions.z
 
 
 class ChannelBranch:
@@ -26,26 +28,21 @@ class ChannelBranch:
 		points = branch_points
 
 
-const MINIMUM_WIDTH := 1.5
-const MAXIMUM_WIDTH := 6.0
-const MINIMUM_DEPTH := 0.3
-const MAXIMUM_DEPTH := 1.2
 const DEPRESSION_SLOPE := 0.001
 const WATER_SURFACE_OFFSET := 0.08
 const CHANNEL_MINIMUM_DROP := 0.005
-const MAXIMUM_CENTERLINE_CUT := 2.0
 
 var _region_size: int
 var _padding: int
 var _grid_size: int
-var _channel_threshold: float
+var _parameters: RiverParameters
 
 
-func _init(region_size: int, padding: int, channel_threshold: float = 4096.0) -> void:
+func _init(region_size: int, padding: int, parameters: RiverParameters = null) -> void:
 	_region_size = region_size
 	_padding = padding
 	_grid_size = region_size + padding * 2
-	_channel_threshold = channel_threshold
+	_parameters = parameters if parameters != null else RiverParameters.new()
 
 
 func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
@@ -64,7 +61,7 @@ func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
 		var next := downstream[cell]
 		if (
 			next >= 0
-			and accumulation[cell] >= _channel_threshold
+			and accumulation[cell] >= _parameters.channel_threshold
 			and not _is_inside(cell)
 			and _is_inside(next)
 		):
@@ -72,11 +69,33 @@ func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
 	return _build_branches(retained, water_heights, downstream, accumulation)
 
 
-func dimensions_for_area(area: float) -> Vector2:
-	var ratio := maxf(area / _channel_threshold, 1.0)
-	return Vector2(
-		clampf(MINIMUM_WIDTH * pow(ratio, 0.3), MINIMUM_WIDTH, MAXIMUM_WIDTH),
-		clampf(MINIMUM_DEPTH * pow(ratio, 0.2), MINIMUM_DEPTH, MAXIMUM_DEPTH)
+func dimensions_for_area(area: float) -> Vector3:
+	var ratio := maxf(area / _parameters.channel_threshold, 1.0)
+	var minimum_width := minf(_parameters.minimum_width, _parameters.maximum_width)
+	var maximum_width := maxf(_parameters.minimum_width, _parameters.maximum_width)
+	var minimum_depth := minf(_parameters.minimum_depth, _parameters.maximum_depth)
+	var maximum_depth := maxf(_parameters.minimum_depth, _parameters.maximum_depth)
+	var minimum_bank := minf(
+		_parameters.minimum_bank_falloff,
+		_parameters.maximum_bank_falloff
+	)
+	var maximum_bank := maxf(
+		_parameters.minimum_bank_falloff,
+		_parameters.maximum_bank_falloff
+	)
+	var depth := clampf(
+		minimum_depth * pow(ratio, 0.2),
+		minimum_depth,
+		maximum_depth
+	)
+	return Vector3(
+		clampf(
+			minimum_width * pow(ratio, 0.3),
+			minimum_width,
+			maximum_width
+		),
+		depth,
+		clampf(depth * 4.0, minimum_bank, maximum_bank)
 	)
 
 
@@ -91,7 +110,7 @@ func _retain_crossing(
 	var cells: Array[int] = [entry]
 	var cell := entry
 	var exited := false
-	while downstream[cell] >= 0 and accumulation[cell] >= _channel_threshold:
+	while downstream[cell] >= 0 and accumulation[cell] >= _parameters.channel_threshold:
 		var next := downstream[cell]
 		cells.append(next)
 		if _is_inside(cell) and not _is_inside(next):
@@ -116,7 +135,7 @@ func _retain_crossing(
 		var centerline_cut := base_heights[cells[index]] - (surface - depth)
 		maximum_cut = maxf(maximum_cut, centerline_cut)
 		surfaces[index] = surface
-	if maximum_cut > MAXIMUM_CENTERLINE_CUT:
+	if maximum_cut > _parameters.maximum_centerline_cut:
 		return
 
 	for index in range(cells.size() - 1):
