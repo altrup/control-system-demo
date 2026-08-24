@@ -33,6 +33,14 @@ func test_jump_only_applies_while_grounded() -> void:
 	assert_eq(player.velocity.y, 0.0)
 
 
+func test_player_can_walk_on_sixty_degree_slopes() -> void:
+	var player := _instantiate_player()
+	if player == null:
+		return
+
+	assert_almost_eq(player.floor_max_angle, deg_to_rad(60.0), 0.0001)
+
+
 func test_movement_follows_player_facing() -> void:
 	var player := _instantiate_player()
 	if player == null:
