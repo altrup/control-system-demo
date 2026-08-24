@@ -34,10 +34,13 @@ class StreamSegment:
 const REGION_SIZE := 128
 const HYDROLOGY_PADDING := 128
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
+const WORLD_MIN := REGION_SIZE * -0.5
+const WORLD_MAX := WORLD_MIN + REGION_SIZE
+const NOISE_COORDINATE_OFFSET := Vector2(64.0, 64.0)
 const TREE_DENSITY := 112.0 / (128.0 * 128.0)
 const TREE_MIN_DISTANCE := 3.5
 const RIVER_TREE_CLEARANCE := 7.0
-const FALLBACK_PLAYER_SPAWN := Vector2(16.0, 64.0)
+const FALLBACK_PLAYER_SPAWN := Vector2(-48.0, 0.0)
 const PLAYER_SPAWN_CLEARANCE := 6.0
 
 var _terrain_noise := FastNoiseLite.new()
@@ -69,17 +72,18 @@ func _init(world_seed: int, river_parameters: RiverParameters = null) -> void:
 
 
 func height_at(position: Vector2) -> float:
-	if position.x < 0.0 or position.y < 0.0:
+	if position.x < WORLD_MIN or position.y < WORLD_MIN:
 		return _base_height_at(position)
-	if position.x > REGION_SIZE - 1 or position.y > REGION_SIZE - 1:
+	if position.x > WORLD_MAX - 1.0 or position.y > WORLD_MAX - 1.0:
 		return _base_height_at(position)
 
-	var x0 := floori(position.x)
-	var z0 := floori(position.y)
+	var grid_position := position - Vector2(WORLD_MIN, WORLD_MIN)
+	var x0 := floori(grid_position.x)
+	var z0 := floori(grid_position.y)
 	var x1 := mini(x0 + 1, REGION_SIZE - 1)
 	var z1 := mini(z0 + 1, REGION_SIZE - 1)
-	var x_blend := position.x - x0
-	var z_blend := position.y - z0
+	var x_blend := grid_position.x - x0
+	var z_blend := grid_position.y - z0
 	var top := lerpf(_terrain_height(x0, z0), _terrain_height(x1, z0), x_blend)
 	var bottom := lerpf(_terrain_height(x0, z1), _terrain_height(x1, z1), x_blend)
 	return lerpf(top, bottom, z_blend)
@@ -106,8 +110,8 @@ func tree_positions() -> Array[Vector2]:
 	while positions.size() < target_count and attempts < target_count * 100:
 		attempts += 1
 		var candidate := Vector2(
-			random.randf_range(4.0, REGION_SIZE - 4.0),
-			random.randf_range(4.0, REGION_SIZE - 4.0)
+			random.randf_range(WORLD_MIN + 4.0, WORLD_MAX - 4.0),
+			random.randf_range(WORLD_MIN + 4.0, WORLD_MAX - 4.0)
 		)
 		if _is_valid_tree_position(candidate, positions):
 			positions.append(candidate)
@@ -123,7 +127,10 @@ func _generate_landscape() -> void:
 	raw_heights.resize(HYDROLOGY_SIZE * HYDROLOGY_SIZE)
 	for z in HYDROLOGY_SIZE:
 		for x in HYDROLOGY_SIZE:
-			var position := Vector2(x - HYDROLOGY_PADDING, z - HYDROLOGY_PADDING)
+			var position := Vector2(
+				x - HYDROLOGY_PADDING + WORLD_MIN,
+				z - HYDROLOGY_PADDING + WORLD_MIN
+			)
 			raw_heights[z * HYDROLOGY_SIZE + x] = _base_height_at(position)
 
 	var network := RiverNetwork.new(REGION_SIZE, HYDROLOGY_PADDING, _river_parameters)
@@ -134,8 +141,9 @@ func _generate_landscape() -> void:
 
 
 func _base_height_at(position: Vector2) -> float:
-	var broad_hills := _terrain_noise.get_noise_2d(position.x, position.y) * 8.5
-	var ground_detail := _detail_noise.get_noise_2d(position.x, position.y) * 1.5
+	var noise_position := position + NOISE_COORDINATE_OFFSET
+	var broad_hills := _terrain_noise.get_noise_2d(noise_position.x, noise_position.y) * 8.5
+	var ground_detail := _detail_noise.get_noise_2d(noise_position.x, noise_position.y) * 1.5
 	return 9.0 + broad_hills + ground_detail
 
 
@@ -172,7 +180,7 @@ func _build_terrain(base_heights: PackedFloat32Array) -> void:
 func _find_player_spawn() -> Vector2:
 	if _stream_segments.is_empty():
 		return FALLBACK_PLAYER_SPAWN
-	var world_center := Vector2(REGION_SIZE * 0.5, REGION_SIZE * 0.5)
+	var world_center := Vector2.ZERO
 	var nearby_segments: Array[StreamSegment] = _stream_segments.duplicate()
 	nearby_segments.sort_custom(func(first: StreamSegment, second: StreamSegment) -> bool:
 		var first_midpoint := Vector2(
@@ -232,8 +240,8 @@ func _terrain_height(x: int, z: int) -> float:
 
 func _is_inside_world(position: Vector2, margin: float = 0.0) -> bool:
 	return (
-		position.x >= margin
-		and position.y >= margin
-		and position.x <= REGION_SIZE - 1 - margin
-		and position.y <= REGION_SIZE - 1 - margin
+		position.x >= WORLD_MIN + margin
+		and position.y >= WORLD_MIN + margin
+		and position.x <= WORLD_MAX - 1.0 - margin
+		and position.y <= WORLD_MAX - 1.0 - margin
 	)

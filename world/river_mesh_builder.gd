@@ -129,10 +129,12 @@ func _append_vertex(
 
 
 func _water_vertex(position: Vector3) -> Vector3:
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
 	return Vector3(
-		clampf(position.x, 0.0, _region_size),
+		clampf(position.x, world_min, world_max),
 		position.y + WATER_HEIGHT_OFFSET,
-		clampf(position.z, 0.0, _region_size)
+		clampf(position.z, world_min, world_max)
 	)
 
 

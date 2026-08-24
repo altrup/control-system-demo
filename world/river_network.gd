@@ -264,19 +264,22 @@ func _flow_accumulation(
 
 
 func _cell_position(cell: int) -> Vector2:
+	var world_min := _region_size * -0.5
 	return Vector2(
-		cell % _grid_size - _padding,
-		cell / _grid_size - _padding
+		cell % _grid_size - _padding + world_min,
+		cell / _grid_size - _padding + world_min
 	)
 
 
 func _is_inside(cell: int) -> bool:
 	var position := _cell_position(cell)
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
 	return (
-		position.x >= 0.0
-		and position.y >= 0.0
-		and position.x < _region_size
-		and position.y < _region_size
+		position.x >= world_min
+		and position.y >= world_min
+		and position.x < world_max
+		and position.y < world_max
 	)
 
 

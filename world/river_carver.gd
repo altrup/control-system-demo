@@ -29,8 +29,9 @@ func _carve_section(
 	start_point: RiverNetwork.ChannelPoint,
 	end_point: RiverNetwork.ChannelPoint
 ) -> void:
-	var start := Vector2(start_point.position.x, start_point.position.z)
-	var end := Vector2(end_point.position.x, end_point.position.z)
+	var grid_offset := Vector2.ONE * (_region_size * 0.5)
+	var start := Vector2(start_point.position.x, start_point.position.z) + grid_offset
+	var end := Vector2(end_point.position.x, end_point.position.z) + grid_offset
 	var delta := end - start
 	var length_squared := delta.length_squared()
 	if is_zero_approx(length_squared):

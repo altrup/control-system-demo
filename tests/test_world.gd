@@ -4,7 +4,7 @@ const WORLD_SCENE_PATH := "res://world/world.tscn"
 const WorldGenerator := preload("res://world/world_generator.gd")
 
 
-func test_world_uses_128_metre_terrain() -> void:
+func test_world_uses_four_regions_centered_on_the_origin() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
@@ -14,7 +14,8 @@ func test_world_uses_128_metre_terrain() -> void:
 		return
 	_handle_terrain3d_deprecation()
 
-	assert_eq(terrain.region_size, Terrain3D.SIZE_128)
+	assert_eq(terrain.region_size, Terrain3D.SIZE_64)
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 4, 3.0))
 
 
 func test_world_uses_generated_terrain() -> void:
@@ -41,15 +42,15 @@ func test_regeneration_removes_stale_terrain_regions() -> void:
 	if world == null:
 		return
 	var terrain := world.get_node("Terrain3D") as Terrain3D
-	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 1, 3.0))
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 4, 3.0))
 	var stale_region := terrain.data.get_regions_active()[0].duplicate(true) as Terrain3DRegion
 	stale_region.location = Vector2i(1, 0)
 	assert_eq(terrain.data.add_region(stale_region), OK)
-	assert_eq(terrain.data.get_region_count(), 2)
+	assert_eq(terrain.data.get_region_count(), 5)
 
 	await world.call("_generate_world")
 
-	assert_eq(terrain.data.get_region_count(), 1)
+	assert_eq(terrain.data.get_region_count(), 4)
 
 
 func test_world_has_generated_water_and_separate_trees() -> void:
@@ -111,10 +112,10 @@ func test_generated_water_stays_inside_world_bounds() -> void:
 	))
 	_handle_terrain3d_deprecation()
 	var bounds := water.mesh.get_aabb()
-	assert_gte(bounds.position.x, 0.0)
-	assert_gte(bounds.position.z, 0.0)
-	assert_lte(bounds.end.x, float(WorldGenerator.REGION_SIZE))
-	assert_lte(bounds.end.z, float(WorldGenerator.REGION_SIZE))
+	assert_gte(bounds.position.x, -64.0)
+	assert_gte(bounds.position.z, -64.0)
+	assert_lte(bounds.end.x, 64.0)
+	assert_lte(bounds.end.z, 64.0)
 
 
 func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:

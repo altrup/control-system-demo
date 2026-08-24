@@ -12,9 +12,9 @@ The user selects the seed through the existing editor preview. The generator doe
 
 ## Generation Domain
 
-Generate the visible terrain at one metre per sample over `[0, 128)` on both horizontal axes. Analyze hydrology with 128 metres of padding on each side. The hydrology domain is therefore 384 by 384 samples over `[-128, 256)`.
+Generate the visible terrain at one metre per sample over `[-64, 64)` on both horizontal axes. Analyze hydrology with 128 metres of padding on each side. The hydrology domain is therefore 384 by 384 samples over `[-192, 192)`.
 
-The padding supplies upstream drainage before a stream enters the visible world. Only the central 128 by 128 samples are sent to Terrain3D. Changing the visual world size must not change base-terrain samples at existing world coordinates.
+The padding supplies upstream drainage before a stream enters the visible world. Only the central 128 by 128 samples are sent to Terrain3D. Store them as four 64 metre regions because Terrain3D aligns regions to the world origin. Changing the visual world size must not change base-terrain samples at existing world coordinates.
 
 Generation remains synchronous and happens once per seed. Measure generation time on the current machine. The initial target is at most five seconds for an editor preview. Optimize the hydrology pass if it exceeds that target; do not reduce padding without a separate design decision.
 

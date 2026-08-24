@@ -31,7 +31,7 @@ func _regenerate_preview() -> void:
 func _generate_world() -> void:
 	water.mesh = null
 	var generator := WorldGenerator.new(world_seed, river_parameters)
-	terrain.region_size = Terrain3D.SIZE_128
+	terrain.region_size = Terrain3D.SIZE_64
 	terrain.material.world_background = Terrain3DMaterial.NONE
 	terrain.material.auto_shader = true
 	terrain.material.set_shader_param("auto_slope", 1.5)
@@ -44,7 +44,7 @@ func _generate_world() -> void:
 	terrain.data.update_maps(Terrain3DRegion.TYPE_MAX, true, false)
 	terrain.data.import_images(
 		[_create_height_map(generator), null, null],
-		Vector3.ZERO,
+		Vector3(WorldGenerator.WORLD_MIN, 0.0, WorldGenerator.WORLD_MIN),
 		0.0,
 		1.0
 	)
@@ -64,7 +64,8 @@ func _create_height_map(generator: WorldGenerator) -> Image:
 	)
 	for x in WorldGenerator.REGION_SIZE:
 		for z in WorldGenerator.REGION_SIZE:
-			image.set_pixel(x, z, Color(generator.height_at(Vector2(x, z)), 0.0, 0.0, 1.0))
+			var position := Vector2(x, z) + Vector2.ONE * WorldGenerator.WORLD_MIN
+			image.set_pixel(x, z, Color(generator.height_at(position), 0.0, 0.0, 1.0))
 	return image
 
 

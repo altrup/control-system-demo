@@ -6,9 +6,9 @@ const RiverNetwork := preload("res://world/river_network.gd")
 
 func test_builds_profile_widths_and_clips_to_world_bounds() -> void:
 	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
-		_point(Vector3(-1.0, 2.0, 4.0)),
-		_point(Vector3(4.0, 1.5, 4.0)),
-		_point(Vector3(9.0, 1.0, 4.0)),
+		_point(Vector3(-5.0, 2.0, 0.0)),
+		_point(Vector3(0.0, 1.5, 0.0)),
+		_point(Vector3(5.0, 1.0, 0.0)),
 	])]
 	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
 
@@ -18,29 +18,29 @@ func test_builds_profile_widths_and_clips_to_world_bounds() -> void:
 	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
 	assert_false(indices.is_empty())
 	for vertex in vertices:
-		assert_gte(vertex.x, 0.0)
-		assert_lte(vertex.x, 8.0)
-		assert_gte(vertex.z, 0.0)
-		assert_lte(vertex.z, 8.0)
-	assert_true(vertices.has(Vector3(4.0, 1.52, 4.0)))
-	assert_true(vertices.has(Vector3(4.0, 1.52, 3.0)))
-	assert_true(vertices.has(Vector3(4.0, 1.52, 5.0)))
+		assert_gte(vertex.x, -4.0)
+		assert_lte(vertex.x, 4.0)
+		assert_gte(vertex.z, -4.0)
+		assert_lte(vertex.z, 4.0)
+	assert_true(vertices.has(Vector3(0.0, 1.52, 0.0)))
+	assert_true(vertices.has(Vector3(0.0, 1.52, -1.0)))
+	assert_true(vertices.has(Vector3(0.0, 1.52, 1.0)))
 
 
 func test_fills_confluence_between_three_branch_ribbons() -> void:
-	var junction := _point(Vector3(4.0, 1.0, 4.0))
+	var junction := _point(Vector3(0.0, 1.0, 0.0))
 	var branches: Array[RiverNetwork.ChannelBranch] = [
 		RiverNetwork.ChannelBranch.new([
-			_point(Vector3(1.0, 1.2, 1.0)),
+			_point(Vector3(-3.0, 1.2, -3.0)),
 			junction,
 		]),
 		RiverNetwork.ChannelBranch.new([
-			_point(Vector3(7.0, 1.2, 1.0)),
+			_point(Vector3(3.0, 1.2, -3.0)),
 			junction,
 		]),
 		RiverNetwork.ChannelBranch.new([
 			junction,
-			_point(Vector3(4.0, 0.8, 7.0)),
+			_point(Vector3(0.0, 0.8, 3.0)),
 		]),
 	]
 	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
@@ -48,7 +48,7 @@ func test_fills_confluence_between_three_branch_ribbons() -> void:
 	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
 
-	for point in [Vector2(4.0, 3.7), Vector2(3.7, 4.0), Vector2(4.3, 4.0), Vector2(4.0, 4.3)]:
+	for point in [Vector2(0.0, -0.3), Vector2(-0.3, 0.0), Vector2(0.3, 0.0), Vector2(0.0, 0.3)]:
 		assert_true(_mesh_covers(point, vertices, indices))
 
 

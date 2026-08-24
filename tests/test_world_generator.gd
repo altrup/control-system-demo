@@ -8,7 +8,7 @@ func test_seed_repeats_generated_world() -> void:
 	var first: RefCounted = generator_script.new(103)
 	var repeated: RefCounted = generator_script.new(103)
 	var changed: RefCounted = generator_script.new(481516)
-	var sample := Vector2(25.5, 73.25)
+	var sample := Vector2(-38.5, 9.25)
 
 	assert_eq(first.call("height_at", sample), repeated.call("height_at", sample))
 	assert_ne(first.call("height_at", sample), changed.call("height_at", sample))
@@ -26,8 +26,8 @@ func test_terrain_has_large_scale_relief() -> void:
 	var generator: RefCounted = generator_script.new(481516)
 	var lowest := INF
 	var highest := -INF
-	for x in range(0, 128, 4):
-		for z in range(0, 128, 4):
+	for x in range(-64, 64, 4):
+		for z in range(-64, 64, 4):
 			var height := generator.call("height_at", Vector2(x, z)) as float
 			lowest = minf(lowest, height)
 			highest = maxf(highest, height)
@@ -39,8 +39,8 @@ func test_hydrology_only_erodes_the_initial_terrain() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(481516)
 	var largest_raise := 0.0
-	for x in range(0, 128, 4):
-		for z in range(0, 128, 4):
+	for x in range(-64, 64, 4):
+		for z in range(-64, 64, 4):
 			var position := Vector2(x, z)
 			var generated_height := generator.call("height_at", position) as float
 			var initial_height := generator.call("_base_height_at", position) as float
@@ -54,8 +54,8 @@ func test_routing_does_not_carve_dry_terrain() -> void:
 	var generator: RefCounted = generator_script.new(481516)
 	var segments: Array = generator.call("stream_segments")
 	var deepest_dry_cut := 0.0
-	for x in range(0, 128, 4):
-		for z in range(0, 128, 4):
+	for x in range(-64, 64, 4):
+		for z in range(-64, 64, 4):
 			var position := Vector2(x, z)
 			if _distance_to_stream(position, segments) <= 8.0:
 				continue
@@ -170,10 +170,10 @@ func test_trees_respect_world_clearances() -> void:
 	assert_eq(positions.size(), 112)
 	for index in positions.size():
 		var position := positions[index] as Vector2
-		assert_gte(position.x, 4.0)
-		assert_lte(position.x, 124.0)
-		assert_gte(position.y, 4.0)
-		assert_lte(position.y, 124.0)
+		assert_gte(position.x, -60.0)
+		assert_lte(position.x, 60.0)
+		assert_gte(position.y, -60.0)
+		assert_lte(position.y, 60.0)
 		assert_gte(_distance_to_stream(position, segments), 7.0)
 		assert_gte(position.distance_to(spawn), 6.0)
 		for other_index in range(index + 1, positions.size()):
@@ -217,8 +217,8 @@ func _stream_signature(generator: RefCounted) -> PackedFloat32Array:
 
 
 func _is_near_world_boundary(position: Vector3) -> bool:
-	return position.x <= 1.0 or position.z <= 1.0 or position.x >= 126.0 or position.z >= 126.0
+	return position.x <= -63.0 or position.z <= -63.0 or position.x >= 62.0 or position.z >= 62.0
 
 
 func _is_inside_world(position: Vector3) -> bool:
-	return position.x >= 0.0 and position.z >= 0.0 and position.x < 128.0 and position.z < 128.0
+	return position.x >= -64.0 and position.z >= -64.0 and position.x < 64.0 and position.z < 64.0

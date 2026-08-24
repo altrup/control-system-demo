@@ -30,10 +30,10 @@ func test_carved_channel_keeps_a_full_depth_riverbed() -> void:
 	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8)
 	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
 		RiverNetwork.ChannelPoint.new(
-			Vector3(1.0, 9.0, 4.0), 4096.0, Vector3(4.0, 1.0, 2.0)
+			Vector3(-3.0, 9.0, 0.0), 4096.0, Vector3(4.0, 1.0, 2.0)
 		),
 		RiverNetwork.ChannelPoint.new(
-			Vector3(6.0, 9.0, 4.0), 4096.0, Vector3(4.0, 1.0, 2.0)
+			Vector3(2.0, 9.0, 0.0), 4096.0, Vector3(4.0, 1.0, 2.0)
 		),
 	])]
 	var carved := carver.call("carve", _flat_terrain(), branches) as PackedFloat32Array
@@ -49,8 +49,8 @@ func test_confluence_uses_union_of_branch_corridors() -> void:
 		return
 	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8)
 	var tributary := RiverNetwork.ChannelBranch.new([
-		_point(Vector3(3.0, 9.0, 1.0)),
-		_point(Vector3(3.0, 8.75, 4.0)),
+		_point(Vector3(-1.0, 9.0, -3.0)),
+		_point(Vector3(-1.0, 8.75, 0.0)),
 	])
 	var branches: Array[RiverNetwork.ChannelBranch] = [_horizontal_branch(), tributary]
 	var carved := carver.call(
@@ -72,8 +72,8 @@ func _flat_terrain() -> PackedFloat32Array:
 
 func _horizontal_branch() -> RiverNetwork.ChannelBranch:
 	return RiverNetwork.ChannelBranch.new([
-		_point(Vector3(1.0, 9.0, 4.0)),
-		_point(Vector3(6.0, 8.5, 4.0)),
+		_point(Vector3(-3.0, 9.0, 0.0)),
+		_point(Vector3(2.0, 8.5, 0.0)),
 	])
 
 

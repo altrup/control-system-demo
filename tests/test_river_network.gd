@@ -14,8 +14,8 @@ func test_keeps_only_boundary_crossing_channels() -> void:
 
 	assert_false(branches.is_empty())
 	for branch in branches:
-		assert_lt(branch.points[0].position.x, 0.0)
-		assert_gte(branch.points[-1].position.x, 4.0)
+		assert_lt(branch.points[0].position.x, -2.0)
+		assert_gte(branch.points[-1].position.x, 2.0)
 
 
 func test_channel_dimensions_grow_with_accumulated_area() -> void:
