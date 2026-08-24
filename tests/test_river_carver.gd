@@ -78,6 +78,23 @@ func test_overlapping_sections_do_not_compound_bank_erosion() -> void:
 	assert_eq(repeated, once)
 
 
+func test_carves_a_half_meter_height_grid_in_world_space() -> void:
+	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8, 0.5)
+	var heights := PackedFloat32Array()
+	heights.resize(256)
+	heights.fill(10.0)
+	var branch := RiverNetwork.ChannelBranch.new([
+		_point(Vector3(-4.0, 9.0, 0.0)),
+		_point(Vector3(3.5, 9.0, 0.0)),
+	])
+	var branches: Array[RiverNetwork.ChannelBranch] = [branch]
+
+	var carved := carver.call("carve", heights, branches) as PackedFloat32Array
+
+	assert_almost_eq(carved[8 * 16 + 8], 8.5, 0.001)
+	assert_eq(carved[0], 10.0)
+
+
 func _flat_terrain() -> PackedFloat32Array:
 	var heights := PackedFloat32Array()
 	heights.resize(64)

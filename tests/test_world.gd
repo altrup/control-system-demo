@@ -4,7 +4,7 @@ const WORLD_SCENE_PATH := "res://world/world.tscn"
 const WorldGenerator := preload("res://world/world_generator.gd")
 
 
-func test_world_uses_four_regions_centered_on_the_origin() -> void:
+func test_world_uses_half_meter_regions_centered_on_the_origin() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
@@ -15,7 +15,49 @@ func test_world_uses_four_regions_centered_on_the_origin() -> void:
 	_handle_terrain3d_deprecation()
 
 	assert_eq(terrain.region_size, Terrain3D.SIZE_64)
-	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 4, 3.0))
+	assert_eq(terrain.vertex_spacing, 0.5)
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 16, 3.0))
+
+
+func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var property_names: Array[StringName] = []
+	for property in world.get_property_list():
+		property_names.append(property.name)
+	_handle_terrain3d_deprecation()
+
+	assert_has(property_names, &"river_channel_threshold")
+	assert_has(property_names, &"river_minimum_width")
+	assert_has(property_names, &"river_maximum_depth")
+	assert_does_not_have(property_names, &"river_parameters")
+
+
+func test_world_maps_inspector_fields_to_generation_parameters() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	world.set("river_channel_threshold", 2048.0)
+	world.set("river_maximum_width", 7.0)
+	world.set("river_maximum_depth", 1.5)
+
+	var parameters: Resource = world.call("_create_river_parameters")
+	_handle_terrain3d_deprecation()
+
+	assert_eq(parameters.get("channel_threshold"), 2048.0)
+	assert_eq(parameters.get("maximum_width"), 7.0)
+	assert_eq(parameters.get("maximum_depth"), 1.5)
+
+
+func test_world_configures_terrain_data_storage() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var terrain := world.get_node("Terrain3D") as Terrain3D
+	_handle_terrain3d_deprecation()
+
+	assert_false(terrain.data_directory.is_empty())
 
 
 func test_world_uses_generated_terrain() -> void:
@@ -42,15 +84,15 @@ func test_regeneration_removes_stale_terrain_regions() -> void:
 	if world == null:
 		return
 	var terrain := world.get_node("Terrain3D") as Terrain3D
-	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 4, 3.0))
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 16, 3.0))
 	var stale_region := terrain.data.get_regions_active()[0].duplicate(true) as Terrain3DRegion
-	stale_region.location = Vector2i(1, 0)
+	stale_region.location = Vector2i(2, 0)
 	assert_eq(terrain.data.add_region(stale_region), OK)
-	assert_eq(terrain.data.get_region_count(), 5)
+	assert_eq(terrain.data.get_region_count(), 17)
 
 	await world.call("_generate_world")
 
-	assert_eq(terrain.data.get_region_count(), 4)
+	assert_eq(terrain.data.get_region_count(), 16)
 
 
 func test_world_has_generated_water_and_separate_trees() -> void:

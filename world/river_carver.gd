@@ -3,18 +3,22 @@ extends RefCounted
 const RiverNetwork := preload("res://world/river_network.gd")
 const FLAT_BED_RATIO := 0.6
 
-var _region_size: int
+var _region_size: float
+var _sample_spacing: float
+var _grid_size: int
 
 
-func _init(region_size: int) -> void:
+func _init(region_size: float, sample_spacing: float = 1.0) -> void:
 	_region_size = region_size
+	_sample_spacing = sample_spacing
+	_grid_size = roundi(region_size / sample_spacing)
 
 
 func carve(
 	base_heights: PackedFloat32Array,
 	branches: Array[RiverNetwork.ChannelBranch]
 ) -> PackedFloat32Array:
-	if base_heights.size() != _region_size * _region_size:
+	if base_heights.size() != _grid_size * _grid_size:
 		push_error("River carver height map dimensions do not match the visible terrain.")
 		return PackedFloat32Array()
 	var carved := base_heights.duplicate()
@@ -35,9 +39,15 @@ func _carve_section(
 	start_point: RiverNetwork.ChannelPoint,
 	end_point: RiverNetwork.ChannelPoint
 ) -> void:
-	var grid_offset := Vector2.ONE * (_region_size * 0.5)
-	var start := Vector2(start_point.position.x, start_point.position.z) + grid_offset
-	var end := Vector2(end_point.position.x, end_point.position.z) + grid_offset
+	var grid_offset := Vector2.ONE * (_grid_size * 0.5)
+	var start := (
+		Vector2(start_point.position.x, start_point.position.z) / _sample_spacing
+		+ grid_offset
+	)
+	var end := (
+		Vector2(end_point.position.x, end_point.position.z) / _sample_spacing
+		+ grid_offset
+	)
 	var delta := end - start
 	var length_squared := delta.length_squared()
 	if is_zero_approx(length_squared):
@@ -45,22 +55,28 @@ func _carve_section(
 	var radius := maxf(
 		start_point.half_width + start_point.bank_falloff,
 		end_point.half_width + end_point.bank_falloff
-	)
+	) / _sample_spacing
 	var minimum := Vector2(
 		maxf(0.0, minf(start.x, end.x) - radius),
 		maxf(0.0, minf(start.y, end.y) - radius)
 	)
 	var maximum := Vector2(
-		minf(_region_size - 1, maxf(start.x, end.x) + radius),
-		minf(_region_size - 1, maxf(start.y, end.y) + radius)
+		minf(_grid_size - 1, maxf(start.x, end.x) + radius),
+		minf(_grid_size - 1, maxf(start.y, end.y) + radius)
 	)
 	for z in range(floori(minimum.y), ceili(maximum.y) + 1):
 		for x in range(floori(minimum.x), ceili(maximum.x) + 1):
 			var position := Vector2(x, z)
 			var progress := clampf((position - start).dot(delta) / length_squared, 0.0, 1.0)
 			var closest := start + delta * progress
-			var half_width := lerpf(start_point.half_width, end_point.half_width, progress)
-			var bank_falloff := lerpf(start_point.bank_falloff, end_point.bank_falloff, progress)
+			var half_width := (
+				lerpf(start_point.half_width, end_point.half_width, progress)
+				/ _sample_spacing
+			)
+			var bank_falloff := (
+				lerpf(start_point.bank_falloff, end_point.bank_falloff, progress)
+				/ _sample_spacing
+			)
 			var distance := position.distance_to(closest)
 			if distance >= half_width + bank_falloff:
 				continue
@@ -68,7 +84,7 @@ func _carve_section(
 			var depth := lerpf(start_point.depth, end_point.depth, progress)
 			var bed_height := water_height - depth
 			var bed_half_width := half_width * FLAT_BED_RATIO
-			var cell := z * _region_size + x
+			var cell := z * _grid_size + x
 			var profile_height: float
 			if distance <= bed_half_width:
 				profile_height = bed_height

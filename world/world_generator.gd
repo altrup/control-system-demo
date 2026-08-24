@@ -32,6 +32,8 @@ class StreamSegment:
 
 
 const REGION_SIZE := 128
+const TERRAIN_SAMPLE_SPACING := 0.5
+const TERRAIN_SAMPLE_SIZE := 256
 const HYDROLOGY_PADDING := 128
 const HYDROLOGY_SIZE := REGION_SIZE + HYDROLOGY_PADDING * 2
 const WORLD_MIN := REGION_SIZE * -0.5
@@ -74,14 +76,19 @@ func _init(world_seed: int, river_parameters: RiverParameters = null) -> void:
 func height_at(position: Vector2) -> float:
 	if position.x < WORLD_MIN or position.y < WORLD_MIN:
 		return _base_height_at(position)
-	if position.x > WORLD_MAX - 1.0 or position.y > WORLD_MAX - 1.0:
+	if (
+		position.x > WORLD_MAX - TERRAIN_SAMPLE_SPACING
+		or position.y > WORLD_MAX - TERRAIN_SAMPLE_SPACING
+	):
 		return _base_height_at(position)
 
-	var grid_position := position - Vector2(WORLD_MIN, WORLD_MIN)
+	var grid_position := (
+		(position - Vector2(WORLD_MIN, WORLD_MIN)) / TERRAIN_SAMPLE_SPACING
+	)
 	var x0 := floori(grid_position.x)
 	var z0 := floori(grid_position.y)
-	var x1 := mini(x0 + 1, REGION_SIZE - 1)
-	var z1 := mini(z0 + 1, REGION_SIZE - 1)
+	var x1 := mini(x0 + 1, TERRAIN_SAMPLE_SIZE - 1)
+	var z1 := mini(z0 + 1, TERRAIN_SAMPLE_SIZE - 1)
 	var x_blend := grid_position.x - x0
 	var z_blend := grid_position.y - z0
 	var top := lerpf(_terrain_height(x0, z0), _terrain_height(x1, z0), x_blend)
@@ -136,7 +143,7 @@ func _generate_landscape() -> void:
 	var network := RiverNetwork.new(REGION_SIZE, HYDROLOGY_PADDING, _river_parameters)
 	_stream_branches = network.build(raw_heights)
 	_stream_segments = _flatten_stream_branches(_stream_branches)
-	_build_terrain(raw_heights)
+	_build_terrain()
 	_player_spawn = _find_player_spawn()
 
 
@@ -166,15 +173,18 @@ func _flatten_stream_branches(
 	return segments
 
 
-func _build_terrain(base_heights: PackedFloat32Array) -> void:
-	_terrain_heights.resize(REGION_SIZE * REGION_SIZE)
-	for z in REGION_SIZE:
-		for x in REGION_SIZE:
-			var hydrology_cell := (
-				(z + HYDROLOGY_PADDING) * HYDROLOGY_SIZE + x + HYDROLOGY_PADDING
+func _build_terrain() -> void:
+	_terrain_heights.resize(TERRAIN_SAMPLE_SIZE * TERRAIN_SAMPLE_SIZE)
+	for z in TERRAIN_SAMPLE_SIZE:
+		for x in TERRAIN_SAMPLE_SIZE:
+			var position := (
+				Vector2(x, z) * TERRAIN_SAMPLE_SPACING
+				+ Vector2.ONE * WORLD_MIN
 			)
-			_terrain_heights[z * REGION_SIZE + x] = base_heights[hydrology_cell]
-	_terrain_heights = RiverCarver.new(REGION_SIZE).carve(_terrain_heights, _stream_branches)
+			_terrain_heights[z * TERRAIN_SAMPLE_SIZE + x] = _base_height_at(position)
+	_terrain_heights = RiverCarver.new(
+		REGION_SIZE, TERRAIN_SAMPLE_SPACING
+	).carve(_terrain_heights, _stream_branches)
 
 
 func _find_player_spawn() -> Vector2:
@@ -235,7 +245,7 @@ func _distance_to_stream(position: Vector2) -> float:
 
 
 func _terrain_height(x: int, z: int) -> float:
-	return _terrain_heights[z * REGION_SIZE + x]
+	return _terrain_heights[z * TERRAIN_SAMPLE_SIZE + x]
 
 
 func _is_inside_world(position: Vector2, margin: float = 0.0) -> bool:
