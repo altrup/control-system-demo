@@ -19,6 +19,24 @@ func test_keeps_only_boundary_crossing_channels() -> void:
 		assert_gte(branch.points[-1].position.x, 2.0)
 
 
+func test_full_domain_keeps_channels_that_start_inside_the_crop() -> void:
+	var network_script := load(NETWORK_PATH) as GDScript
+	var network: RefCounted = network_script.new(4, 3, _parameters(5.0))
+	assert_true(network.has_method("build_full_domain"))
+	if not network.has_method("build_full_domain"):
+		return
+
+	var cropped: Array = network.call("build", _east_facing_slope())
+	var full: Array = network.call("build_full_domain", _east_facing_slope())
+
+	assert_true(cropped.is_empty())
+	assert_false(full.is_empty())
+	for branch in full:
+		assert_gte(branch.points[0].position.x, -2.0)
+		assert_lt(branch.points[0].position.x, 2.0)
+		assert_gt(branch.points[-1].position.x, 5.0)
+
+
 func test_channel_dimensions_grow_with_accumulated_area() -> void:
 	assert_true(ResourceLoader.exists(NETWORK_PATH))
 	if not ResourceLoader.exists(NETWORK_PATH):

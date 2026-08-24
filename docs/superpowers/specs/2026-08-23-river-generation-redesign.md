@@ -12,9 +12,11 @@ The user selects the seed through the existing editor preview. The generator doe
 
 ## Generation Domain
 
-Generate the visible terrain at one metre per sample over `[-64, 64)` on both horizontal axes. Analyze hydrology with 128 metres of padding on each side. The hydrology domain is therefore 384 by 384 samples over `[-192, 192)`.
+Generate the visible terrain at 0.5 metres per sample over `[-64, 64)` on both horizontal axes. Analyze hydrology at one metre per sample with 128 metres of padding on each side. The hydrology domain is therefore 384 by 384 samples over `[-192, 192)`.
 
-The padding supplies upstream drainage before a stream enters the visible world. Only the central 128 by 128 samples are sent to Terrain3D. Store them as four 64 metre regions because Terrain3D aligns regions to the world origin. Changing the visual world size must not change base-terrain samples at existing world coordinates.
+The padding supplies upstream drainage before a stream enters the visible world. Only the central 256 by 256 terrain samples are sent to Terrain3D during normal generation. Store them as sixteen regions because the 0.5 metre vertex spacing makes each 64-vertex region cover 32 metres. Changing the visual world size must not change base-terrain samples at existing world coordinates.
+
+Expose an editor-only full-domain preview toggle. When enabled, render the full 384 by 384 metre hydrology domain at the same 0.5 metre terrain spacing, show every valid above-threshold channel that drains to the outer boundary, hide trees, and draw the central playable boundary. Runtime generation always uses the normal crop.
 
 Generation remains synchronous and happens once per seed. Measure generation time on the current machine. The initial target is at most five seconds for an editor preview. Optimize the hydrology pass if it exceeds that target; do not reduce padding without a separate design decision.
 
@@ -25,6 +27,8 @@ Create drainage data from a copy of the base height field. Depression filling ca
 Calculate one downstream neighbor and accumulated upstream area for each hydrology cell. Cells above a fixed drainage-area threshold form a directed channel graph. The threshold uses square metres of upstream area, so it does not depend on the visible map dimensions. The graph can remain grid-based, but its cell centers are not render geometry.
 
 Keep a channel component only when it has an upstream crossing into the visible world and a downstream crossing out of it. Retain all components that pass; do not rank them by global size. Do not render a branch whose first above-threshold point is inside the visible world. Interior springs, ponds, wetlands, lakes, and seasonal channels remain out of scope.
+
+The full-domain preview does not apply the playable crop's end-to-end selection. It shows channels from the first cell that reaches the drainage threshold to their domain-edge outlet. A visible headwater start represents smaller upstream flow below the render threshold.
 
 Reject a component if maintaining its downstream grade requires lowering the water surface more than 2.0 metres below the local drainage surface. Intended channel depth does not count toward this grade-correction limit. This prevents a filled routing surface from creating an artificial canyon without limiting the designed river depth. If no component remains, the seed has no visible river.
 
@@ -83,7 +87,8 @@ Scale tree count by visible area. Trees and the player must remain outside carve
 Automated tests must prove:
 
 - The same seed produces identical base terrain, channel profiles, carved terrain, and tree positions.
-- The visible height field is 128 by 128 and hydrology uses the full 128 metre padding.
+- The visible height field has 256 by 256 samples and hydrology uses the full 128 metre padding.
+- The full preview produces 768 by 768 terrain samples, keeps interior headwaters, hides trees, and returns to the normal crop when disabled.
 - Routing changes do not modify visible base terrain.
 - Every rendered component crosses into and out of the visible world.
 - No rendered branch starts inside the visible world.

@@ -31,6 +31,7 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 	assert_has(property_names, &"river_channel_threshold")
 	assert_has(property_names, &"river_minimum_width")
 	assert_has(property_names, &"river_maximum_depth")
+	assert_has(property_names, &"preview_full_generation_domain")
 	assert_does_not_have(property_names, &"river_parameters")
 
 
@@ -112,6 +113,40 @@ func test_world_has_generated_water_and_separate_trees() -> void:
 	var water_size := water.mesh.get_aabb().size
 	assert_gt(maxf(water_size.x, water_size.z), 20.0)
 	assert_eq(trees.get_child_count(), 112)
+
+
+func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var property_names: Array[StringName] = []
+	for property in world.get_property_list():
+		property_names.append(property.name)
+	if not property_names.has(&"preview_full_generation_domain"):
+		fail_test("The world exposes the full-domain preview toggle")
+		return
+
+	await world.call("_generate_world", true)
+	var terrain := world.get_node("Terrain3D") as Terrain3D
+	var water := world.get_node("Water") as MeshInstance3D
+	var trees := world.get_node("Trees") as Node3D
+	var preview_bounds := world.get_node_or_null("PreviewBounds") as MeshInstance3D
+	_handle_terrain3d_deprecation()
+
+	assert_eq(terrain.data.get_region_count(), 144)
+	assert_gte(water.mesh.get_aabb().position.x, -192.0)
+	assert_lte(water.mesh.get_aabb().end.x, 192.0)
+	assert_false(trees.visible)
+	assert_not_null(preview_bounds)
+	if preview_bounds == null:
+		return
+	assert_true(preview_bounds.visible)
+
+	await world.call("_generate_world", false)
+	_handle_terrain3d_deprecation()
+	assert_eq(terrain.data.get_region_count(), 16)
+	assert_true(trees.visible)
+	assert_false(preview_bounds.visible)
 
 
 func test_generated_water_has_no_folded_or_degenerate_triangles() -> void:

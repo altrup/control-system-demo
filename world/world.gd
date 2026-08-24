@@ -9,6 +9,11 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 
 @export_group("World")
 @export var world_seed := 103
+@export var preview_full_generation_domain := false:
+	set(value):
+		preview_full_generation_domain = value
+		if Engine.is_editor_hint() and is_inside_tree():
+			_regenerate_preview()
 
 @export_group("River", "river_")
 @export_range(1.0, 65536.0, 1.0, "suffix:m²") var river_channel_threshold := 4096.0
@@ -41,7 +46,7 @@ func _ready() -> void:
 
 func _regenerate_preview() -> void:
 	if Engine.is_editor_hint() and is_inside_tree():
-		_generate_world()
+		_generate_world(preview_full_generation_domain)
 
 
 func _configure_terrain_storage() -> void:
@@ -51,9 +56,11 @@ func _configure_terrain_storage() -> void:
 	terrain.data_directory = TERRAIN_DATA_DIRECTORY
 
 
-func _generate_world() -> void:
+func _generate_world(full_domain: bool = false) -> void:
 	water.mesh = null
-	var generator := WorldGenerator.new(world_seed, _create_river_parameters())
+	var generator := WorldGenerator.new(
+		world_seed, _create_river_parameters(), full_domain
+	)
 	terrain.region_size = Terrain3D.SIZE_64
 	terrain.vertex_spacing = WorldGenerator.TERRAIN_SAMPLE_SPACING
 	terrain.material.world_background = Terrain3DMaterial.NONE
@@ -68,15 +75,18 @@ func _generate_world() -> void:
 	terrain.data.update_maps(Terrain3DRegion.TYPE_MAX, true, false)
 	terrain.data.import_images(
 		[_create_height_map(generator), null, null],
-		Vector3(WorldGenerator.WORLD_MIN, 0.0, WorldGenerator.WORLD_MIN),
+		Vector3(generator.terrain_min(), 0.0, generator.terrain_min()),
 		0.0,
 		1.0
 	)
-	water.mesh = RiverMeshBuilder.new(WorldGenerator.REGION_SIZE).build(
+	water.mesh = RiverMeshBuilder.new(generator.terrain_size()).build(
 		generator.stream_branches()
 	)
 	_place_player(generator)
-	_place_trees(generator)
+	trees.visible = not full_domain
+	if not full_domain:
+		_place_trees(generator)
+	_update_preview_bounds(generator, full_domain)
 
 
 func _create_river_parameters() -> RiverParameters:
@@ -95,20 +105,83 @@ func _create_river_parameters() -> RiverParameters:
 
 
 func _create_height_map(generator: WorldGenerator) -> Image:
+	var sample_size := generator.terrain_sample_size()
 	var image := Image.create_empty(
-		WorldGenerator.TERRAIN_SAMPLE_SIZE,
-		WorldGenerator.TERRAIN_SAMPLE_SIZE,
+		sample_size,
+		sample_size,
 		false,
 		Image.FORMAT_RF
 	)
-	for x in WorldGenerator.TERRAIN_SAMPLE_SIZE:
-		for z in WorldGenerator.TERRAIN_SAMPLE_SIZE:
+	for x in sample_size:
+		for z in sample_size:
 			var position := (
 				Vector2(x, z) * WorldGenerator.TERRAIN_SAMPLE_SPACING
-				+ Vector2.ONE * WorldGenerator.WORLD_MIN
+				+ Vector2.ONE * generator.terrain_min()
 			)
 			image.set_pixel(x, z, Color(generator.height_at(position), 0.0, 0.0, 1.0))
 	return image
+
+
+func _update_preview_bounds(generator: WorldGenerator, full_domain: bool) -> void:
+	var bounds := get_node_or_null("PreviewBounds") as MeshInstance3D
+	if not full_domain:
+		if bounds != null:
+			bounds.visible = false
+		return
+	if bounds == null:
+		bounds = MeshInstance3D.new()
+		bounds.name = "PreviewBounds"
+		bounds.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(bounds)
+	var material := StandardMaterial3D.new()
+	material.albedo_color = Color(1.0, 0.7, 0.1)
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var mesh := ImmediateMesh.new()
+	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
+	for offset in WorldGenerator.REGION_SIZE:
+		var start := WorldGenerator.WORLD_MIN + offset
+		var end := start + 1.0
+		_add_preview_line(
+			mesh,
+			generator,
+			Vector2(start, WorldGenerator.WORLD_MIN),
+			Vector2(end, WorldGenerator.WORLD_MIN)
+		)
+		_add_preview_line(
+			mesh,
+			generator,
+			Vector2(start, WorldGenerator.WORLD_MAX),
+			Vector2(end, WorldGenerator.WORLD_MAX)
+		)
+		_add_preview_line(
+			mesh,
+			generator,
+			Vector2(WorldGenerator.WORLD_MIN, start),
+			Vector2(WorldGenerator.WORLD_MIN, end)
+		)
+		_add_preview_line(
+			mesh,
+			generator,
+			Vector2(WorldGenerator.WORLD_MAX, start),
+			Vector2(WorldGenerator.WORLD_MAX, end)
+		)
+	mesh.surface_end()
+	bounds.mesh = mesh
+	bounds.visible = true
+
+
+func _add_preview_line(
+	mesh: ImmediateMesh,
+	generator: WorldGenerator,
+	start: Vector2,
+	end: Vector2
+) -> void:
+	mesh.surface_add_vertex(
+		Vector3(start.x, generator.height_at(start) + 0.25, start.y)
+	)
+	mesh.surface_add_vertex(
+		Vector3(end.x, generator.height_at(end) + 0.25, end.y)
+	)
 
 
 func _create_terrain_assets() -> Terrain3DAssets:

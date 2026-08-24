@@ -40,19 +40,35 @@ var _region_size: int
 var _padding: int
 var _grid_size: int
 var _parameters: RiverParameters
+var _output_size: int
+var _full_domain_output := false
 
 
 func _init(region_size: int, padding: int, parameters: RiverParameters = null) -> void:
 	_region_size = region_size
 	_padding = padding
 	_grid_size = region_size + padding * 2
+	_output_size = region_size
 	_parameters = parameters if parameters != null else RiverParameters.new()
 
 
 func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
+	return _build(base_heights, false)
+
+
+func build_full_domain(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
+	return _build(base_heights, true)
+
+
+func _build(
+	base_heights: PackedFloat32Array,
+	full_domain: bool
+) -> Array[ChannelBranch]:
 	if base_heights.size() != _grid_size * _grid_size:
 		push_error("River height map dimensions do not match the generation domain.")
 		return []
+	_output_size = _grid_size if full_domain else _region_size
+	_full_domain_output = full_domain
 
 	var ascending_cells: Array[int] = []
 	var routing_heights := _fill_depressions(base_heights, ascending_cells)
@@ -61,15 +77,27 @@ func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
 	var accumulation := _flow_accumulation(downstream, ascending_cells)
 	var retained: Dictionary[int, bool] = {}
 	var water_heights: Dictionary[int, float] = {}
-	for cell in downstream.size():
-		var next := downstream[cell]
-		if (
-			next >= 0
-			and accumulation[cell] >= _parameters.channel_threshold
-			and not _is_inside(cell)
-			and _is_inside(next)
-		):
-			_retain_crossing(cell, base_heights, downstream, accumulation, retained, water_heights)
+	if full_domain:
+		_retain_full_domain(
+			base_heights, downstream, accumulation, retained, water_heights
+		)
+	else:
+		for cell in downstream.size():
+			var next := downstream[cell]
+			if (
+				next >= 0
+				and accumulation[cell] >= _parameters.channel_threshold
+				and not _is_inside(cell)
+				and _is_inside(next)
+			):
+				_retain_crossing(
+					cell,
+					base_heights,
+					downstream,
+					accumulation,
+					retained,
+					water_heights
+				)
 	var branches := _build_branches(retained, water_heights, downstream, accumulation)
 	_constrain_water_to_banks(branches, base_heights)
 	return branches
@@ -124,6 +152,64 @@ func _retain_crossing(
 			break
 		cell = next
 	if not exited:
+		return
+	_retain_cells(cells, base_heights, accumulation, retained, water_heights)
+
+
+func _retain_full_domain(
+	base_heights: PackedFloat32Array,
+	downstream: PackedInt32Array,
+	accumulation: PackedFloat32Array,
+	retained: Dictionary[int, bool],
+	water_heights: Dictionary[int, float]
+) -> void:
+	var incoming_count: Dictionary[int, int] = {}
+	for cell in downstream.size():
+		var next := downstream[cell]
+		if next >= 0 and accumulation[cell] >= _parameters.channel_threshold:
+			incoming_count[next] = incoming_count.get(next, 0) + 1
+	for cell in downstream.size():
+		if (
+			downstream[cell] >= 0
+			and accumulation[cell] >= _parameters.channel_threshold
+			and incoming_count.get(cell, 0) == 0
+		):
+			_retain_domain_path(
+				cell,
+				base_heights,
+				downstream,
+				accumulation,
+				retained,
+				water_heights
+			)
+
+
+func _retain_domain_path(
+	entry: int,
+	base_heights: PackedFloat32Array,
+	downstream: PackedInt32Array,
+	accumulation: PackedFloat32Array,
+	retained: Dictionary[int, bool],
+	water_heights: Dictionary[int, float]
+) -> void:
+	var cells: Array[int] = [entry]
+	var cell := entry
+	while downstream[cell] >= 0:
+		cell = downstream[cell]
+		cells.append(cell)
+	if not _is_domain_boundary(cell):
+		return
+	_retain_cells(cells, base_heights, accumulation, retained, water_heights)
+
+
+func _retain_cells(
+	cells: Array[int],
+	base_heights: PackedFloat32Array,
+	accumulation: PackedFloat32Array,
+	retained: Dictionary[int, bool],
+	water_heights: Dictionary[int, float]
+) -> void:
+	if cells.size() < 2:
 		return
 
 	var surfaces := PackedFloat32Array()
@@ -388,6 +474,12 @@ func _extend_boundary_endpoints(points: Array[ChannelPoint]) -> void:
 	var last_extension := _extended_boundary_point(points[last_index], points[last_index - 1])
 	if last_extension != null:
 		points.append(last_extension)
+	elif _full_domain_output and _is_output_edge_sample(points[last_index].position):
+		var domain_extension := _extended_domain_exit_point(
+			points[last_index], points[last_index - 1]
+		)
+		if domain_extension != null:
+			points.append(domain_extension)
 
 
 func _extended_boundary_point(point: ChannelPoint, neighbor: ChannelPoint) -> ChannelPoint:
@@ -414,9 +506,50 @@ func _extended_boundary_point(point: ChannelPoint, neighbor: ChannelPoint) -> Ch
 	)
 
 
+func _extended_domain_exit_point(point: ChannelPoint, neighbor: ChannelPoint) -> ChannelPoint:
+	var direction := Vector2(
+		point.position.x - neighbor.position.x,
+		point.position.z - neighbor.position.z
+	).normalized()
+	var world_min := _output_size * -0.5
+	var world_max := world_min + _output_size
+	var boundary_distance := INF
+	if direction.x < 0.0:
+		boundary_distance = minf(
+			boundary_distance,
+			(world_min - point.position.x) / direction.x
+		)
+	elif direction.x > 0.0:
+		boundary_distance = minf(
+			boundary_distance,
+			(world_max - point.position.x) / direction.x
+		)
+	if direction.y < 0.0:
+		boundary_distance = minf(
+			boundary_distance,
+			(world_min - point.position.z) / direction.y
+		)
+	elif direction.y > 0.0:
+		boundary_distance = minf(
+			boundary_distance,
+			(world_max - point.position.z) / direction.y
+		)
+	var boundary_position := point.position + Vector3(
+		direction.x * (boundary_distance + 0.001),
+		0.0,
+		direction.y * (boundary_distance + 0.001)
+	)
+	var boundary_point := ChannelPoint.new(
+		boundary_position,
+		point.accumulated_area,
+		Vector3(point.half_width * 2.0, point.depth, point.bank_falloff)
+	)
+	return _extended_boundary_point(boundary_point, point)
+
+
 func _boundary_outward_component(position: Vector3, direction: Vector2) -> float:
-	var world_min := _region_size * -0.5
-	var world_max := world_min + _region_size
+	var world_min := _output_size * -0.5
+	var world_max := world_min + _output_size
 	var component := 0.0
 	if position.x <= world_min:
 		component = maxf(component, -direction.x)
@@ -430,8 +563,8 @@ func _boundary_outward_component(position: Vector3, direction: Vector2) -> float
 
 
 func _distance_outside_world(position: Vector3) -> float:
-	var world_min := _region_size * -0.5
-	var world_max := world_min + _region_size
+	var world_min := _output_size * -0.5
+	var world_max := world_min + _output_size
 	return maxf(
 		maxf(world_min - position.x, position.x - world_max),
 		maxf(world_min - position.z, position.z - world_max)
@@ -439,13 +572,24 @@ func _distance_outside_world(position: Vector3) -> float:
 
 
 func _is_inside_position(position: Vector3) -> bool:
-	var world_min := _region_size * -0.5
-	var world_max := world_min + _region_size
+	var world_min := _output_size * -0.5
+	var world_max := world_min + _output_size
 	return (
 		position.x >= world_min
 		and position.z >= world_min
 		and position.x < world_max
 		and position.z < world_max
+	)
+
+
+func _is_output_edge_sample(position: Vector3) -> bool:
+	var world_min := _output_size * -0.5
+	var world_max_sample := world_min + _output_size - 1.0
+	return (
+		position.x <= world_min
+		or position.z <= world_min
+		or position.x >= world_max_sample
+		or position.z >= world_max_sample
 	)
 
 
@@ -533,6 +677,12 @@ func _is_inside(cell: int) -> bool:
 		and position.x < world_max
 		and position.y < world_max
 	)
+
+
+func _is_domain_boundary(cell: int) -> bool:
+	var x := cell % _grid_size
+	var z: int = cell / _grid_size
+	return x == 0 or z == 0 or x == _grid_size - 1 or z == _grid_size - 1
 
 
 func _heap_push(heap: Array[int], cell: int, heights: PackedFloat32Array) -> void:
