@@ -80,6 +80,55 @@ func test_natural_drainage_keeps_boundary_crossing_channels() -> void:
 		assert_false(_is_inside_world(branch.points[-1].position))
 
 
+func test_boundary_channels_keep_their_full_profile_outside_the_crop() -> void:
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var branches: Array = generator.call("stream_branches")
+
+	for branch in branches:
+		var first = branch.points[0]
+		var last = branch.points[-1]
+		assert_gte(
+			_distance_outside_world(first.position),
+			first.half_width + first.bank_falloff
+		)
+		assert_gte(
+			_distance_outside_world(last.position),
+			last.half_width + last.bank_falloff
+		)
+
+
+func test_water_surface_edges_are_supported_by_terrain_or_water() -> void:
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var branches: Array = generator.call("stream_branches")
+	var segments: Array = generator.call("stream_segments")
+
+	for branch in branches:
+		for index in branch.points.size():
+			var point = branch.points[index]
+			var previous: Vector3 = branch.points[maxi(0, index - 1)].position
+			var following: Vector3 = branch.points[mini(branch.points.size() - 1, index + 1)].position
+			var tangent := Vector2(following.x - previous.x, following.z - previous.z).normalized()
+			var edge_direction: Vector2 = (
+				Vector2(-tangent.y, tangent.x)
+				* (point.half_width + 0.6)
+			)
+			for edge in [
+				Vector2(point.position.x, point.position.z) + edge_direction,
+				Vector2(point.position.x, point.position.z) - edge_direction,
+			]:
+				if not _is_inside_world(Vector3(edge.x, 0.0, edge.y)):
+					continue
+				assert_true(
+					generator.call("height_at", edge) >= point.position.y - 0.03
+					or _water_covers(edge, segments),
+					"Unsupported shoreline at %s: terrain %.3f, water %.3f" % [
+						edge,
+						generator.call("height_at", edge),
+						point.position.y,
+					]
+				)
+
+
 func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(103)
@@ -110,6 +159,35 @@ func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void
 	assert_gt(longest_branch, 20)
 	assert_gt(sharpest_turn, 0.7)
 	assert_true(reached_boundary)
+
+
+func test_rendered_channel_paths_are_smooth_and_subcell_sampled() -> void:
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var sharpest_turn := 1.0
+	var longest_straight_run := 0.0
+	var longest_interior_segment := 0.0
+	for branch in generator.call("stream_branches") as Array:
+		var straight_run := 0.0
+		for index in range(1, branch.points.size() - 1):
+			var previous: Vector3 = branch.points[index - 1].position
+			var current: Vector3 = branch.points[index].position
+			var following: Vector3 = branch.points[index + 1].position
+			var incoming := Vector2(current.x - previous.x, current.z - previous.z)
+			var outgoing := Vector2(following.x - current.x, following.z - current.z)
+			var alignment := incoming.normalized().dot(outgoing.normalized())
+			sharpest_turn = minf(sharpest_turn, alignment)
+			if alignment > 0.9999:
+				straight_run += outgoing.length()
+			else:
+				longest_straight_run = maxf(longest_straight_run, straight_run)
+				straight_run = 0.0
+			if _is_inside_world(current) and _is_inside_world(following):
+				longest_interior_segment = maxf(longest_interior_segment, outgoing.length())
+		longest_straight_run = maxf(longest_straight_run, straight_run)
+
+	assert_gt(sharpest_turn, 0.85)
+	assert_lt(longest_straight_run, 16.0)
+	assert_lte(longest_interior_segment, 0.75)
 
 
 func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
@@ -196,6 +274,30 @@ func _distance_to_stream(position: Vector2, segments: Array) -> float:
 		var closest := Geometry2D.get_closest_point_to_segment(position, start, end)
 		distance = minf(distance, position.distance_to(closest))
 	return distance
+
+
+func _water_covers(position: Vector2, segments: Array) -> bool:
+	for segment in segments:
+		var start := Vector2(segment.start.x, segment.start.z)
+		var end := Vector2(segment.end.x, segment.end.z)
+		var delta := end - start
+		var progress := clampf((position - start).dot(delta) / delta.length_squared(), 0.0, 1.0)
+		var closest := start + delta * progress
+		var half_width := lerpf(
+			segment.start_half_width,
+			segment.end_half_width,
+			progress
+		) + 0.49
+		if position.distance_to(closest) <= half_width:
+			return true
+	return false
+
+
+func _distance_outside_world(position: Vector3) -> float:
+	return maxf(
+		maxf(-64.0 - position.x, position.x - 64.0),
+		maxf(-64.0 - position.z, position.z - 64.0)
+	)
 
 
 func _stream_signature(generator: RefCounted) -> PackedFloat32Array:

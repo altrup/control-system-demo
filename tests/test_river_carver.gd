@@ -63,6 +63,21 @@ func test_confluence_uses_union_of_branch_corridors() -> void:
 	assert_lt(carved[4 * 8 + 3], 10.0)
 
 
+func test_overlapping_sections_do_not_compound_bank_erosion() -> void:
+	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8)
+	var branch := _horizontal_branch()
+	var once_branches: Array[RiverNetwork.ChannelBranch] = [branch]
+	var repeated_branches: Array[RiverNetwork.ChannelBranch] = [branch, branch]
+	var once := carver.call(
+		"carve", _flat_terrain(), once_branches
+	) as PackedFloat32Array
+	var repeated := carver.call(
+		"carve", _flat_terrain(), repeated_branches
+	) as PackedFloat32Array
+
+	assert_eq(repeated, once)
+
+
 func _flat_terrain() -> PackedFloat32Array:
 	var heights := PackedFloat32Array()
 	heights.resize(64)

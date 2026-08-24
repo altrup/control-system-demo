@@ -31,6 +31,10 @@ class ChannelBranch:
 const DEPRESSION_SLOPE := 0.001
 const WATER_SURFACE_OFFSET := 0.08
 const CHANNEL_MINIMUM_DROP := 0.005
+const CHANNEL_MAXIMUM_DROP := 0.04
+const BANK_FREEBOARD := 0.15
+const CURVE_SAMPLE_INTERVAL := 0.5
+const CURVE_MAX_OFFSET := 0.75
 
 var _region_size: int
 var _padding: int
@@ -66,7 +70,9 @@ func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
 			and _is_inside(next)
 		):
 			_retain_crossing(cell, base_heights, downstream, accumulation, retained, water_heights)
-	return _build_branches(retained, water_heights, downstream, accumulation)
+	var branches := _build_branches(retained, water_heights, downstream, accumulation)
+	_constrain_water_to_banks(branches, base_heights)
+	return branches
 
 
 func dimensions_for_area(area: float) -> Vector3:
@@ -84,13 +90,13 @@ func dimensions_for_area(area: float) -> Vector3:
 		_parameters.maximum_bank_falloff
 	)
 	var depth := clampf(
-		minimum_depth * pow(ratio, 0.2),
+		minimum_depth * pow(ratio, _parameters.depth_growth_exponent),
 		minimum_depth,
 		maximum_depth
 	)
 	return Vector3(
 		clampf(
-			minimum_width * pow(ratio, 0.3),
+			minimum_width * pow(ratio, _parameters.width_growth_exponent),
 			minimum_width,
 			maximum_width
 		),
@@ -169,7 +175,8 @@ func _build_branches(
 				points.append(_make_point(next, water_heights, accumulation))
 				break
 			current = next
-		_smooth_branch(points)
+		points = _curve_branch(points)
+		_extend_boundary_endpoints(points)
 		branches.append(ChannelBranch.new(points))
 	return branches
 
@@ -187,14 +194,259 @@ func _make_point(
 	)
 
 
-func _smooth_branch(points: Array[ChannelPoint]) -> void:
-	var positions: Array[Vector3] = []
-	for point in points:
-		positions.append(point.position)
-	for index in range(1, points.size() - 1):
-		var smoothed := (positions[index - 1] + positions[index] * 2.0 + positions[index + 1]) * 0.25
-		points[index].position.x = smoothed.x
-		points[index].position.z = smoothed.z
+func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
+	if points.size() < 3:
+		return points
+	var source_distances := _point_distances(points)
+	var controls: Array[Vector3] = []
+	# ponytail: Sub-cell bends remove display bias; use D-infinity for continuous topology.
+	var phase := points[0].position.x * 0.31 + points[0].position.z * 0.17
+	for index in points.size():
+		var position := Vector3(points[index].position.x, 0.0, points[index].position.z)
+		if index > 0 and index < points.size() - 1:
+			var previous := points[index - 1].position
+			var following := points[index + 1].position
+			var tangent := Vector2(
+				following.x - previous.x,
+				following.z - previous.z
+			).normalized()
+			var incoming := Vector2(
+				position.x - previous.x,
+				position.z - previous.z
+			).normalized()
+			var outgoing := Vector2(
+				following.x - position.x,
+				following.z - position.z
+			).normalized()
+			var progress := source_distances[index] / source_distances[-1]
+			var bend := clampf(
+				sin(source_distances[index] * 0.3 + phase) * 0.8
+				+ sin(source_distances[index] * 0.53 - phase) * 0.3,
+				-CURVE_MAX_OFFSET,
+				CURVE_MAX_OFFSET
+			) * sin(PI * progress) * smoothstep(0.7, 0.95, incoming.dot(outgoing))
+			position.x -= tangent.y * bend
+			position.z += tangent.x * bend
+		controls.append(position)
+	controls = _cut_corners(controls)
+	controls = _cut_corners(controls)
+
+	var curve := Curve3D.new()
+	curve.bake_interval = CURVE_SAMPLE_INTERVAL
+	for index in controls.size():
+		var previous := controls[maxi(0, index - 1)]
+		var following := controls[mini(controls.size() - 1, index + 1)]
+		var handle := (following - previous) / 6.0
+		curve.add_point(controls[index], -handle, handle)
+
+	var baked := curve.get_baked_points()
+	var baked_distances := PackedFloat32Array([0.0])
+	for index in range(1, baked.size()):
+		baked_distances.append(
+			baked_distances[-1]
+			+ Vector2(baked[index].x - baked[index - 1].x, baked[index].z - baked[index - 1].z).length()
+		)
+	var curved: Array[ChannelPoint] = []
+	var source_index := 0
+	for index in baked.size():
+		var target_distance := (
+			baked_distances[index] / baked_distances[-1] * source_distances[-1]
+		)
+		while (
+			source_index < points.size() - 2
+			and source_distances[source_index + 1] < target_distance
+		):
+			source_index += 1
+		var span := source_distances[source_index + 1] - source_distances[source_index]
+		var weight := (target_distance - source_distances[source_index]) / span
+		var area := lerpf(
+			points[source_index].accumulated_area,
+			points[source_index + 1].accumulated_area,
+			weight
+		)
+		var water_height := lerpf(
+			points[source_index].position.y,
+			points[source_index + 1].position.y,
+			weight
+		)
+		curved.append(ChannelPoint.new(
+			Vector3(baked[index].x, water_height, baked[index].z),
+			area,
+			dimensions_for_area(area)
+		))
+	return curved
+
+
+func _point_distances(points: Array[ChannelPoint]) -> PackedFloat32Array:
+	var distances := PackedFloat32Array([0.0])
+	for index in range(1, points.size()):
+		distances.append(
+			distances[-1] + Vector2(
+				points[index].position.x - points[index - 1].position.x,
+				points[index].position.z - points[index - 1].position.z
+			).length()
+		)
+	return distances
+
+
+func _cut_corners(positions: Array[Vector3]) -> Array[Vector3]:
+	var cut: Array[Vector3] = [positions[0]]
+	for index in range(positions.size() - 1):
+		cut.append(positions[index].lerp(positions[index + 1], 0.25))
+		cut.append(positions[index].lerp(positions[index + 1], 0.75))
+	cut.append(positions[-1])
+	return cut
+
+
+func _constrain_water_to_banks(
+	branches: Array[ChannelBranch],
+	base_heights: PackedFloat32Array
+) -> void:
+	var water_heights: Dictionary[Vector2, float] = {}
+	var point_count := 0
+	for branch in branches:
+		point_count += branch.points.size()
+		for index in branch.points.size():
+			var point := branch.points[index]
+			var previous := branch.points[maxi(0, index - 1)].position
+			var next_index := mini(branch.points.size() - 1, index + 1)
+			var following := branch.points[next_index].position
+			var tangent := Vector2(following.x - previous.x, following.z - previous.z).normalized()
+			var bank_offset := (
+				Vector2(-tangent.y, tangent.x)
+				* (point.half_width + point.bank_falloff)
+			)
+			var center := Vector2(point.position.x, point.position.z)
+			var bank_height := minf(
+				_sample_height(base_heights, center + bank_offset),
+				_sample_height(base_heights, center - bank_offset)
+			)
+			water_heights[center] = minf(
+				minf(water_heights.get(center, INF), point.position.y),
+				bank_height - BANK_FREEBOARD
+			)
+
+	# ponytail: Full relaxation suits this small graph; use a topological pass if maps grow.
+	for _iteration in point_count:
+		var changed := false
+		for branch in branches:
+			for index in range(branch.points.size() - 1):
+				var current := branch.points[index]
+				var next := branch.points[index + 1]
+				var current_key := Vector2(current.position.x, current.position.z)
+				var next_key := Vector2(next.position.x, next.position.z)
+				var distance := current_key.distance_to(next_key)
+				var maximum_next_height := (
+					water_heights[current_key] - CHANNEL_MINIMUM_DROP * distance
+				)
+				if water_heights[next_key] > maximum_next_height:
+					water_heights[next_key] = maximum_next_height
+					changed = true
+				var maximum_current_height := (
+					water_heights[next_key] + CHANNEL_MAXIMUM_DROP * distance
+				)
+				if water_heights[current_key] > maximum_current_height:
+					water_heights[current_key] = maximum_current_height
+					changed = true
+		if not changed:
+			break
+
+	for branch in branches:
+		for point in branch.points:
+			point.position.y = water_heights[Vector2(point.position.x, point.position.z)]
+
+
+func _sample_height(base_heights: PackedFloat32Array, position: Vector2) -> float:
+	var world_min := _region_size * -0.5
+	var grid_position := position - Vector2.ONE * world_min + Vector2.ONE * _padding
+	var x0 := clampi(floori(grid_position.x), 0, _grid_size - 1)
+	var z0 := clampi(floori(grid_position.y), 0, _grid_size - 1)
+	var x1 := mini(x0 + 1, _grid_size - 1)
+	var z1 := mini(z0 + 1, _grid_size - 1)
+	var x_blend := clampf(grid_position.x - x0, 0.0, 1.0)
+	var z_blend := clampf(grid_position.y - z0, 0.0, 1.0)
+	var top := lerpf(
+		base_heights[z0 * _grid_size + x0],
+		base_heights[z0 * _grid_size + x1],
+		x_blend
+	)
+	var bottom := lerpf(
+		base_heights[z1 * _grid_size + x0],
+		base_heights[z1 * _grid_size + x1],
+		x_blend
+	)
+	return lerpf(top, bottom, z_blend)
+
+
+func _extend_boundary_endpoints(points: Array[ChannelPoint]) -> void:
+	if points.size() < 2:
+		return
+	var first_extension := _extended_boundary_point(points[0], points[1])
+	if first_extension != null:
+		points.push_front(first_extension)
+	var last_index := points.size() - 1
+	var last_extension := _extended_boundary_point(points[last_index], points[last_index - 1])
+	if last_extension != null:
+		points.append(last_extension)
+
+
+func _extended_boundary_point(point: ChannelPoint, neighbor: ChannelPoint) -> ChannelPoint:
+	if _is_inside_position(point.position):
+		return null
+	var outward := Vector2(
+		point.position.x - neighbor.position.x,
+		point.position.z - neighbor.position.z
+	).normalized()
+	var outward_component := _boundary_outward_component(point.position, outward)
+	if is_zero_approx(outward_component):
+		return null
+	var profile_radius := point.half_width + point.bank_falloff
+	var extension_distance := (
+		maxf(profile_radius - _distance_outside_world(point.position), 0.0)
+		/ outward_component
+		+ 0.01
+	)
+	var extension := outward * extension_distance
+	return ChannelPoint.new(
+		point.position + Vector3(extension.x, 0.0, extension.y),
+		point.accumulated_area,
+		Vector3(point.half_width * 2.0, point.depth, point.bank_falloff)
+	)
+
+
+func _boundary_outward_component(position: Vector3, direction: Vector2) -> float:
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
+	var component := 0.0
+	if position.x <= world_min:
+		component = maxf(component, -direction.x)
+	if position.x >= world_max:
+		component = maxf(component, direction.x)
+	if position.z <= world_min:
+		component = maxf(component, -direction.y)
+	if position.z >= world_max:
+		component = maxf(component, direction.y)
+	return component
+
+
+func _distance_outside_world(position: Vector3) -> float:
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
+	return maxf(
+		maxf(world_min - position.x, position.x - world_max),
+		maxf(world_min - position.z, position.z - world_max)
+	)
+
+
+func _is_inside_position(position: Vector3) -> bool:
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
+	return (
+		position.x >= world_min
+		and position.z >= world_min
+		and position.x < world_max
+		and position.z < world_max
+	)
 
 
 func _fill_depressions(

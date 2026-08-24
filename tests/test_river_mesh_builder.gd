@@ -4,7 +4,7 @@ const BUILDER_PATH := "res://world/river_mesh_builder.gd"
 const RiverNetwork := preload("res://world/river_network.gd")
 
 
-func test_builds_profile_widths_and_clips_to_world_bounds() -> void:
+func test_builds_overlapping_surface_and_clips_to_world_bounds() -> void:
 	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
 		_point(Vector3(-5.0, 2.0, 0.0)),
 		_point(Vector3(0.0, 1.5, 0.0)),
@@ -23,8 +23,10 @@ func test_builds_profile_widths_and_clips_to_world_bounds() -> void:
 		assert_gte(vertex.z, -4.0)
 		assert_lte(vertex.z, 4.0)
 	assert_true(vertices.has(Vector3(0.0, 1.52, 0.0)))
-	assert_true(vertices.has(Vector3(0.0, 1.52, -1.0)))
-	assert_true(vertices.has(Vector3(0.0, 1.52, 1.0)))
+	assert_true(vertices.has(Vector3(0.0, 1.52, -1.5)))
+	assert_true(vertices.has(Vector3(0.0, 1.52, 1.5)))
+	for vertex in vertices:
+		assert_gte(vertex.y, 1.02)
 
 
 func test_fills_confluence_between_three_branch_ribbons() -> void:
@@ -50,6 +52,19 @@ func test_fills_confluence_between_three_branch_ribbons() -> void:
 
 	for point in [Vector2(0.0, -0.3), Vector2(-0.3, 0.0), Vector2(0.3, 0.0), Vector2(0.0, 0.3)]:
 		assert_true(_mesh_covers(point, vertices, indices))
+
+
+func test_clips_a_diagonal_river_without_tapering_its_boundary_mouth() -> void:
+	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
+		_point(Vector3(8.0, 1.0, 4.0)),
+		_point(Vector3(0.0, 0.8, -4.0)),
+	])]
+	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
+	var arrays := mesh.surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+
+	assert_true(_mesh_covers(Vector2(3.9, 0.0), vertices, indices))
 
 
 func _point(position: Vector3) -> RiverNetwork.ChannelPoint:

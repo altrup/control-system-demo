@@ -22,7 +22,7 @@ Generation remains synchronous and happens once per seed. Measure generation tim
 
 Create drainage data from a copy of the base height field. Depression filling can change this routing copy, but it must never directly change visible terrain.
 
-Calculate one downstream neighbor and accumulated upstream area for each hydrology cell. Cells above a fixed drainage-area threshold form a directed channel graph. The threshold uses square metres of upstream area, so it does not depend on the visible map dimensions.
+Calculate one downstream neighbor and accumulated upstream area for each hydrology cell. Cells above a fixed drainage-area threshold form a directed channel graph. The threshold uses square metres of upstream area, so it does not depend on the visible map dimensions. The graph can remain grid-based, but its cell centers are not render geometry.
 
 Keep a channel component only when it has an upstream crossing into the visible world and a downstream crossing out of it. Retain all components that pass; do not rank them by global size. Do not render a branch whose first above-threshold point is inside the visible world. Interior springs, ponds, wetlands, lakes, and seasonal channels remain out of scope.
 
@@ -30,7 +30,7 @@ Reject a component if maintaining its downstream grade requires lowering the wat
 
 ## Shared Channel Profile
 
-Convert each retained graph path into sampled channel points. Apply restrained smoothing that cannot overshoot the drainage path or move a point outside its local terrain cell corridor.
+Convert each retained graph path into a terrain-constrained spline. Add deterministic sub-cell bends to remove long cardinal and diagonal runs, limit displacement to less than one terrain cell, and preserve every confluence and boundary endpoint. Resample the spline at intervals of at most 0.5 metres. The resampled points are the only channel geometry consumed downstream.
 
 Each point stores:
 
@@ -43,13 +43,13 @@ Each point stores:
 
 Width and depth increase gradually with accumulated flow. They can increase at a confluence and must not saturate near their maximum immediately after the visibility threshold. Smooth adjacent values along the branch to remove one-cell changes.
 
-The water surface is level across each channel section and never rises downstream. The bed is the water surface minus local depth. Both terrain carving and mesh generation consume these same channel points.
+The water surface is level across each channel section and never rises downstream. Constrain it below the unchanged terrain at both outer bank edges, leave at least 0.15 metres of dry-bank freeboard, and limit downstream grade changes across shared junctions. The bed is the water surface minus local depth. Terrain carving and mesh generation consume these same channel points.
 
 ## Initial Tuning Values
 
-Start channel visibility at 4,096 square metres of accumulated upstream area. Use gradual power curves from that threshold to produce full water widths from 1.5 to 6.0 metres and center depths from 0.6 to 1.8 metres. Set bank falloff from the local depth, with a range of 2.0 to 4.8 metres.
+Start channel visibility at 4,096 square metres of accumulated upstream area. Let the drainage ratio equal accumulated area divided by this threshold. Set full water width to `3.0 * drainage_ratio^0.45`, capped at 8.0 metres. Set center depth to `0.8 * drainage_ratio^0.35`, capped at 1.8 metres. Set bank falloff from the local depth, with a range of 2.0 to 4.8 metres.
 
-Expose the threshold, width range, depth range, bank falloff range, and maximum centerline cut for hands-on editor tuning. These are scene-selection and feel values, not separate generation modes. The fixed seed and automated behavior tests must remain deterministic for any chosen values.
+Expose the threshold, width range, width exponent, depth range, depth exponent, bank falloff range, and maximum centerline cut for hands-on editor tuning. These are scene-selection and feel values, not separate generation modes. The fixed seed and automated behavior tests must remain deterministic for any chosen values.
 
 ## Terrain Carving
 
@@ -61,9 +61,9 @@ At confluences, use the union of the incoming and outgoing channel corridors. A 
 
 ## Water Mesh
 
-Generate a static `ArrayMesh` from the shared channel profile. Each section supplies left-bank, center, and right-bank vertices. Mesh width comes directly from the carved water width; do not search the finished terrain for a shoreline.
+Generate a static `ArrayMesh` from the shared channel profile. Each section supplies left-bank, center, and right-bank vertices. Extend the top surface 0.5 metres into the rising dry-bank profile so Terrain3D interpolation and level-of-detail changes cannot expose a crack.
 
-Connect consecutive sections with indexed triangles. Join branches with a confluence patch that uses their shared junction height and covers the union of their water edges. Extend boundary sections one sample beyond the visible world, then clip the rendered result at the terrain edge so water reaches the boundary without gaps.
+Connect consecutive sections with indexed triangles. Do not add vertical or sloped edge skirts. Join branches with a confluence patch that uses their shared junction height and covers the union of their water edges. Extend each boundary section until its complete water and bank profile is outside the visible world. Clip water triangles at the terrain edge; do not clamp individual vertices. This keeps diagonal river mouths full-width and inside the crop.
 
 The initial material remains a simple transparent water material. Flow animation, foam, refraction, underwater post-processing, buoyancy, and swimming remain separate work after the geometry is accepted.
 
@@ -88,7 +88,9 @@ Automated tests must prove:
 - Every rendered component crosses into and out of the visible world.
 - No rendered branch starts inside the visible world.
 - Greater accumulated flow produces a wider and deeper downstream channel.
-- Water height never rises downstream, the bed stays below water, and both banks stay above water.
+- Water height never rises downstream, abrupt grade changes are bounded, the bed stays below water, and both outer banks retain dry freeboard.
+- Rendered channels have no grid-aligned corner sharper than 30 degrees and no exact straight run longer than 16 metres.
+- Water top geometry has no skirt vertices below the local surface, and its outer edge overlaps rising bank terrain.
 - Carving changes a complete corridor and leaves all cells outside it unchanged.
 - Every retained branch produces mesh triangles and confluence patches contain no open junction gap.
 

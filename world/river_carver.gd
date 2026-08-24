@@ -20,12 +20,18 @@ func carve(
 	var carved := base_heights.duplicate()
 	for branch in branches:
 		for index in range(branch.points.size() - 1):
-			_carve_section(carved, branch.points[index], branch.points[index + 1])
+			_carve_section(
+				carved,
+				base_heights,
+				branch.points[index],
+				branch.points[index + 1]
+			)
 	return carved
 
 
 func _carve_section(
 	heights: PackedFloat32Array,
+	base_heights: PackedFloat32Array,
 	start_point: RiverNetwork.ChannelPoint,
 	end_point: RiverNetwork.ChannelPoint
 ) -> void:
@@ -75,7 +81,7 @@ func _carve_section(
 			else:
 				profile_height = lerpf(
 					water_height,
-					heights[cell],
+					base_heights[cell],
 					smoothstep(half_width, half_width + bank_falloff, distance)
 				)
 			heights[cell] = minf(heights[cell], profile_height)
