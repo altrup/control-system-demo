@@ -17,6 +17,15 @@ func test_carves_bed_and_banks_without_changing_dry_terrain() -> void:
 	assert_eq(carved[0 * 8 + 3], 10.0)
 
 
+func test_carved_bank_meets_water_at_the_mesh_edge() -> void:
+	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8)
+	var branches: Array[RiverNetwork.ChannelBranch] = [_horizontal_branch()]
+	var carved := carver.call("carve", _flat_terrain(), branches) as PackedFloat32Array
+
+	assert_almost_eq(carved[3 * 8 + 3], 8.8, 0.001)
+	assert_gt(carved[2 * 8 + 3], 8.8)
+
+
 func test_confluence_uses_union_of_branch_corridors() -> void:
 	assert_true(ResourceLoader.exists(CARVER_PATH))
 	if not ResourceLoader.exists(CARVER_PATH):

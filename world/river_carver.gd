@@ -59,6 +59,18 @@ func _carve_section(
 			var water_height := lerpf(start_point.position.y, end_point.position.y, progress)
 			var depth := lerpf(start_point.depth, end_point.depth, progress)
 			var bed_height := water_height - depth
-			var blend := smoothstep(half_width, half_width + bank_falloff, distance)
 			var cell := z * _region_size + x
-			heights[cell] = minf(heights[cell], lerpf(bed_height, heights[cell], blend))
+			var profile_height: float
+			if distance <= half_width:
+				profile_height = lerpf(
+					bed_height,
+					water_height,
+					smoothstep(0.0, half_width, distance)
+				)
+			else:
+				profile_height = lerpf(
+					water_height,
+					heights[cell],
+					smoothstep(half_width, half_width + bank_falloff, distance)
+				)
+			heights[cell] = minf(heights[cell], profile_height)
