@@ -37,6 +37,20 @@ func test_full_domain_keeps_channels_that_start_inside_the_crop() -> void:
 		assert_gt(branch.points[-1].position.x, 5.0)
 
 
+func test_cropped_channels_use_full_network_geometry() -> void:
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
+		4, 3, _parameters(2.0)
+	)
+	var cropped: Array = network.call("build", _east_facing_slope())
+	var full: Array = network.call("build_full_domain", _east_facing_slope())
+
+	assert_false(cropped.is_empty())
+	for branch in cropped:
+		for point in branch.points:
+			if _is_inside_crop(point.position):
+				assert_true(_contains_point(full, point.position))
+
+
 func test_channel_dimensions_grow_with_accumulated_area() -> void:
 	assert_true(ResourceLoader.exists(NETWORK_PATH))
 	if not ResourceLoader.exists(NETWORK_PATH):
@@ -138,3 +152,15 @@ func _parameters(threshold: float) -> RiverParameters:
 	var parameters := RiverParameters.new()
 	parameters.channel_threshold = threshold
 	return parameters
+
+
+func _contains_point(branches: Array, position: Vector3) -> bool:
+	for branch in branches:
+		for point in branch.points:
+			if point.position.is_equal_approx(position):
+				return true
+	return false
+
+
+func _is_inside_crop(position: Vector3) -> bool:
+	return position.x >= -2.0 and position.z >= -2.0 and position.x < 2.0 and position.z < 2.0

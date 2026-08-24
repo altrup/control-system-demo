@@ -3,7 +3,7 @@ extends RefCounted
 const RiverNetwork := preload("res://world/river_network.gd")
 
 const WATER_HEIGHT_OFFSET := 0.02
-const SHORE_OVERLAP := 0.5
+const SHORE_OVERLAP := 0.75
 const UV_SCALE := 0.1
 const MINIMUM_TRIANGLE_AREA := 0.0001
 

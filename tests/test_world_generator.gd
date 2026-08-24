@@ -5,8 +5,8 @@ const GENERATOR_PATH := "res://world/world_generator.gd"
 
 func test_seed_repeats_generated_world() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var first: RefCounted = generator_script.new(103)
-	var repeated: RefCounted = generator_script.new(103)
+	var first: RefCounted = generator_script.new(556)
+	var repeated: RefCounted = generator_script.new(556)
 	var changed: RefCounted = generator_script.new(481516)
 	var sample := Vector2(-38.5, 9.25)
 
@@ -68,7 +68,7 @@ func test_routing_does_not_carve_dry_terrain() -> void:
 
 func test_natural_drainage_keeps_boundary_crossing_channels() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 	assert_true(generator.has_method("stream_segments"))
 	if not generator.has_method("stream_segments"):
 		return
@@ -81,7 +81,7 @@ func test_natural_drainage_keeps_boundary_crossing_channels() -> void:
 
 
 func test_boundary_channels_keep_their_full_profile_outside_the_crop() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
 	var branches: Array = generator.call("stream_branches")
 
 	for branch in branches:
@@ -98,7 +98,7 @@ func test_boundary_channels_keep_their_full_profile_outside_the_crop() -> void:
 
 
 func test_water_surface_edges_are_supported_by_terrain_or_water() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
 	var branches: Array = generator.call("stream_branches")
 	var segments: Array = generator.call("stream_segments")
 
@@ -131,7 +131,7 @@ func test_water_surface_edges_are_supported_by_terrain_or_water() -> void:
 
 func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 	assert_true(generator.has_method("stream_branches"))
 	if not generator.has_method("stream_branches"):
 		return
@@ -162,7 +162,7 @@ func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void
 
 
 func test_rendered_channel_paths_are_smooth_and_subcell_sampled() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(103)
+	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
 	var sharpest_turn := 1.0
 	var longest_straight_run := 0.0
 	var longest_interior_segment := 0.0
@@ -192,7 +192,7 @@ func test_rendered_channel_paths_are_smooth_and_subcell_sampled() -> void:
 
 func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -201,7 +201,7 @@ func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 	if segments.is_empty():
 		return
 	var playable_segments := segments.filter(
-		func(segment) -> bool: return _is_inside_world(segment.start)
+		func(segment) -> bool: return _is_inside_terrain_samples(segment.start)
 	)
 	assert_false(playable_segments.is_empty())
 	if playable_segments.is_empty():
@@ -224,7 +224,7 @@ func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 
 func test_player_spawns_near_but_not_inside_a_stream() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -237,7 +237,7 @@ func test_player_spawns_near_but_not_inside_a_stream() -> void:
 
 func test_trees_respect_world_clearances() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -260,7 +260,7 @@ func test_trees_respect_world_clearances() -> void:
 
 func test_tree_count_scales_with_visible_area() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(103)
+	var generator: RefCounted = generator_script.new(556)
 
 	assert_eq(generator.call("tree_count_for_region_size", 128), 112)
 	assert_eq(generator.call("tree_count_for_region_size", 256), 448)
@@ -287,7 +287,7 @@ func _water_covers(position: Vector2, segments: Array) -> bool:
 			segment.start_half_width,
 			segment.end_half_width,
 			progress
-		) + 0.49
+		) + 0.74
 		if position.distance_to(closest) <= half_width:
 			return true
 	return false
@@ -324,3 +324,12 @@ func _is_near_world_boundary(position: Vector3) -> bool:
 
 func _is_inside_world(position: Vector3) -> bool:
 	return position.x >= -64.0 and position.z >= -64.0 and position.x < 64.0 and position.z < 64.0
+
+
+func _is_inside_terrain_samples(position: Vector3) -> bool:
+	return (
+		position.x >= -64.0
+		and position.z >= -64.0
+		and position.x <= 63.5
+		and position.z <= 63.5
+	)

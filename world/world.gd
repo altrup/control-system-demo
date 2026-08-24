@@ -8,7 +8,7 @@ const TREE_SCENE := preload("res://world/tree.tscn")
 const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 
 @export_group("World")
-@export var world_seed := 103
+@export var world_seed := 556
 @export var preview_full_generation_domain := false:
 	set(value):
 		preview_full_generation_domain = value

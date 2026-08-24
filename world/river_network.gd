@@ -67,8 +67,8 @@ func _build(
 	if base_heights.size() != _grid_size * _grid_size:
 		push_error("River height map dimensions do not match the generation domain.")
 		return []
-	_output_size = _grid_size if full_domain else _region_size
-	_full_domain_output = full_domain
+	_output_size = _grid_size
+	_full_domain_output = true
 
 	var ascending_cells: Array[int] = []
 	var routing_heights := _fill_depressions(base_heights, ascending_cells)
@@ -77,30 +77,16 @@ func _build(
 	var accumulation := _flow_accumulation(downstream, ascending_cells)
 	var retained: Dictionary[int, bool] = {}
 	var water_heights: Dictionary[int, float] = {}
-	if full_domain:
-		_retain_full_domain(
-			base_heights, downstream, accumulation, retained, water_heights
-		)
-	else:
-		for cell in downstream.size():
-			var next := downstream[cell]
-			if (
-				next >= 0
-				and accumulation[cell] >= _parameters.channel_threshold
-				and not _is_inside(cell)
-				and _is_inside(next)
-			):
-				_retain_crossing(
-					cell,
-					base_heights,
-					downstream,
-					accumulation,
-					retained,
-					water_heights
-				)
+	_retain_full_domain(
+		base_heights, downstream, accumulation, retained, water_heights
+	)
 	var branches := _build_branches(retained, water_heights, downstream, accumulation)
 	_constrain_water_to_banks(branches, base_heights)
-	return branches
+	if full_domain:
+		return branches
+	_output_size = _region_size
+	_full_domain_output = false
+	return _crop_crossing_branches(branches)
 
 
 func dimensions_for_area(area: float) -> Vector3:
@@ -131,29 +117,6 @@ func dimensions_for_area(area: float) -> Vector3:
 		depth,
 		clampf(depth * 4.0, minimum_bank, maximum_bank)
 	)
-
-
-func _retain_crossing(
-	entry: int,
-	base_heights: PackedFloat32Array,
-	downstream: PackedInt32Array,
-	accumulation: PackedFloat32Array,
-	retained: Dictionary[int, bool],
-	water_heights: Dictionary[int, float]
-) -> void:
-	var cells: Array[int] = [entry]
-	var cell := entry
-	var exited := false
-	while downstream[cell] >= 0 and accumulation[cell] >= _parameters.channel_threshold:
-		var next := downstream[cell]
-		cells.append(next)
-		if _is_inside(cell) and not _is_inside(next):
-			exited = true
-			break
-		cell = next
-	if not exited:
-		return
-	_retain_cells(cells, base_heights, accumulation, retained, water_heights)
 
 
 func _retain_full_domain(
@@ -233,6 +196,100 @@ func _retain_cells(
 		retained[cells[index]] = true
 	for index in cells.size():
 		water_heights[cells[index]] = minf(water_heights.get(cells[index], INF), surfaces[index])
+
+
+func _crop_crossing_branches(
+	branches: Array[ChannelBranch]
+) -> Array[ChannelBranch]:
+	var downstream_branches: Dictionary[Vector2, int] = {}
+	for branch_index in branches.size():
+		var start := branches[branch_index].points[0].position
+		downstream_branches[Vector2(start.x, start.z)] = branch_index
+
+	var retained_ranges: Dictionary[int, Vector2i] = {}
+	for branch_index in branches.size():
+		var points := branches[branch_index].points
+		for point_index in range(points.size() - 1):
+			if (
+				not _is_playable_position(points[point_index].position)
+				and _is_playable_position(points[point_index + 1].position)
+			):
+				_merge_ranges(
+					retained_ranges,
+					_trace_to_playable_exit(
+						branches,
+						downstream_branches,
+						branch_index,
+						point_index
+					)
+				)
+
+	var cropped: Array[ChannelBranch] = []
+	for branch_index in branches.size():
+		if not retained_ranges.has(branch_index):
+			continue
+		var point_range := retained_ranges[branch_index]
+		var points: Array[ChannelPoint] = []
+		for point_index in range(point_range.x, point_range.y + 1):
+			points.append(branches[branch_index].points[point_index])
+		_extend_boundary_endpoints(points)
+		cropped.append(ChannelBranch.new(points))
+	return cropped
+
+
+func _trace_to_playable_exit(
+	branches: Array[ChannelBranch],
+	downstream_branches: Dictionary[Vector2, int],
+	entry_branch: int,
+	entry_point: int
+) -> Dictionary[int, Vector2i]:
+	var route: Dictionary[int, Vector2i] = {}
+	var branch_index := entry_branch
+	var start_point := entry_point
+	while not route.has(branch_index):
+		var points := branches[branch_index].points
+		for point_index in range(start_point, points.size() - 1):
+			if (
+				_is_playable_position(points[point_index].position)
+				and not _is_playable_position(points[point_index + 1].position)
+			):
+				route[branch_index] = Vector2i(start_point, point_index + 1)
+				return route
+		route[branch_index] = Vector2i(start_point, points.size() - 1)
+		var end := points[-1].position
+		var end_key := Vector2(end.x, end.z)
+		if not downstream_branches.has(end_key):
+			return {}
+		branch_index = downstream_branches[end_key]
+		start_point = 0
+	return {}
+
+
+func _merge_ranges(
+	target: Dictionary[int, Vector2i],
+	source: Dictionary[int, Vector2i]
+) -> void:
+	for branch_index in source:
+		var source_range := source[branch_index]
+		if not target.has(branch_index):
+			target[branch_index] = source_range
+			continue
+		var target_range := target[branch_index]
+		target[branch_index] = Vector2i(
+			mini(target_range.x, source_range.x),
+			maxi(target_range.y, source_range.y)
+		)
+
+
+func _is_playable_position(position: Vector3) -> bool:
+	var world_min := _region_size * -0.5
+	var world_max := world_min + _region_size
+	return (
+		position.x >= world_min
+		and position.z >= world_min
+		and position.x < world_max
+		and position.z < world_max
+	)
 
 
 func _build_branches(
@@ -664,18 +721,6 @@ func _cell_position(cell: int) -> Vector2:
 	return Vector2(
 		cell % _grid_size - _padding + world_min,
 		cell / _grid_size - _padding + world_min
-	)
-
-
-func _is_inside(cell: int) -> bool:
-	var position := _cell_position(cell)
-	var world_min := _region_size * -0.5
-	var world_max := world_min + _region_size
-	return (
-		position.x >= world_min
-		and position.y >= world_min
-		and position.x < world_max
-		and position.y < world_max
 	)
 
 

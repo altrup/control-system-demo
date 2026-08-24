@@ -23,8 +23,8 @@ func test_builds_overlapping_surface_and_clips_to_world_bounds() -> void:
 		assert_gte(vertex.z, -4.0)
 		assert_lte(vertex.z, 4.0)
 	assert_true(vertices.has(Vector3(0.0, 1.52, 0.0)))
-	assert_true(vertices.has(Vector3(0.0, 1.52, -1.5)))
-	assert_true(vertices.has(Vector3(0.0, 1.52, 1.5)))
+	assert_true(_mesh_covers(Vector2(0.0, -1.6), vertices, indices))
+	assert_true(_mesh_covers(Vector2(0.0, 1.6), vertices, indices))
 	for vertex in vertices:
 		assert_gte(vertex.y, 1.02)
 

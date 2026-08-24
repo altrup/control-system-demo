@@ -6,7 +6,7 @@ This spec supersedes the terrain-generation and water sections of `2026-08-23-ge
 
 ## Goal
 
-Generate a deterministic 128 by 128 metre forest arena from a fixed seed. A suitable seed can contain a shallow stream that enters and leaves the visible world. Terrain carving and the water surface must come from the same river network, so every visible channel contains water and water stays inside its banks.
+Generate a deterministic 128 by 128 metre forest arena from fixed seed 556. The seed contains a shallow stream that enters and leaves the visible world. Terrain carving and the water surface must come from the same river network, so every visible channel contains water and water stays inside its banks.
 
 The user selects the seed through the existing editor preview. The generator does not force a river, search for a crop, or select the globally largest channel. A seed without a valid crossing stream produces a riverless arena.
 
@@ -26,9 +26,9 @@ Create drainage data from a copy of the base height field. Depression filling ca
 
 Calculate one downstream neighbor and accumulated upstream area for each hydrology cell. Cells above a fixed drainage-area threshold form a directed channel graph. The threshold uses square metres of upstream area, so it does not depend on the visible map dimensions. The graph can remain grid-based, but its cell centers are not render geometry.
 
-Keep a channel component only when it has an upstream crossing into the visible world and a downstream crossing out of it. Retain all components that pass; do not rank them by global size. Do not render a branch whose first above-threshold point is inside the visible world. Interior springs, ponds, wetlands, lakes, and seasonal channels remain out of scope.
+Build and validate the full-domain channel network before applying the playable crop. Convert this network to its final sampled geometry once. The normal view keeps only directed routes with an upstream crossing into the visible world and a downstream crossing out of it. Its points inside the playable area must come unchanged from the full-domain network. Retain all components that pass; do not rank them by global size. Do not render a route whose first above-threshold point is inside the visible world. Interior springs, ponds, wetlands, lakes, and seasonal channels remain out of scope.
 
-The full-domain preview does not apply the playable crop's end-to-end selection. It shows channels from the first cell that reaches the drainage threshold to their domain-edge outlet. A visible headwater start represents smaller upstream flow below the render threshold.
+The full-domain preview shows this same canonical network without the playable crop. It includes channels from the first cell that reaches the drainage threshold to their domain-edge outlet. A visible headwater start represents smaller upstream flow below the render threshold.
 
 Reject a component if maintaining its downstream grade requires lowering the water surface more than 2.0 metres below the local drainage surface. Intended channel depth does not count toward this grade-correction limit. This prevents a filled routing surface from creating an artificial canyon without limiting the designed river depth. If no component remains, the seed has no visible river.
 
@@ -91,6 +91,7 @@ Automated tests must prove:
 - The full preview produces 768 by 768 terrain samples, keeps interior headwaters, hides trees, and returns to the normal crop when disabled.
 - Routing changes do not modify visible base terrain.
 - Every rendered component crosses into and out of the visible world.
+- Every sampled point inside the normal view belongs to the full-domain network.
 - No rendered branch starts inside the visible world.
 - Greater accumulated flow produces a wider and deeper downstream channel.
 - Water height never rises downstream, abrupt grade changes are bounded, the bed stays below water, and both outer banks retain dry freeboard.

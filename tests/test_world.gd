@@ -69,7 +69,7 @@ func test_world_uses_generated_terrain() -> void:
 	assert_not_null(terrain)
 	if terrain == null:
 		return
-	var segments: Array = WorldGenerator.new(103).stream_segments()
+	var segments: Array = WorldGenerator.new(556).stream_segments()
 	var midpoint: Vector3 = segments[segments.size() / 2].start
 	assert_true(await wait_until(
 		func() -> bool: return not is_nan(terrain.data.get_height(midpoint)),
@@ -211,7 +211,7 @@ func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
 	var arrays := water.mesh.surface_get_arrays(0)
 	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 	var point_count := 0
-	for branch in WorldGenerator.new(103).stream_branches():
+	for branch in WorldGenerator.new(556).stream_branches():
 		point_count += branch.points.size()
 
 	assert_lt(vertices.size(), point_count * 6)
