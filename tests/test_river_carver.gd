@@ -26,6 +26,23 @@ func test_carved_bank_meets_water_at_the_mesh_edge() -> void:
 	assert_gt(carved[2 * 8 + 3], 8.8)
 
 
+func test_carved_channel_keeps_a_full_depth_riverbed() -> void:
+	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(8)
+	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
+		RiverNetwork.ChannelPoint.new(
+			Vector3(1.0, 9.0, 4.0), 4096.0, Vector3(4.0, 1.0, 2.0)
+		),
+		RiverNetwork.ChannelPoint.new(
+			Vector3(6.0, 9.0, 4.0), 4096.0, Vector3(4.0, 1.0, 2.0)
+		),
+	])]
+	var carved := carver.call("carve", _flat_terrain(), branches) as PackedFloat32Array
+
+	assert_almost_eq(carved[4 * 8 + 3], 8.0, 0.001)
+	assert_almost_eq(carved[3 * 8 + 3], 8.0, 0.001)
+	assert_almost_eq(carved[2 * 8 + 3], 9.0, 0.001)
+
+
 func test_confluence_uses_union_of_branch_corridors() -> void:
 	assert_true(ResourceLoader.exists(CARVER_PATH))
 	if not ResourceLoader.exists(CARVER_PATH):

@@ -131,9 +131,8 @@ func _retain_crossing(
 				base_heights[cells[index]] - WATER_SURFACE_OFFSET,
 				surface - CHANNEL_MINIMUM_DROP * distance
 			)
-		var depth := dimensions_for_area(accumulation[cells[index]]).y
-		var centerline_cut := base_heights[cells[index]] - (surface - depth)
-		maximum_cut = maxf(maximum_cut, centerline_cut)
+		var grade_cut := base_heights[cells[index]] - WATER_SURFACE_OFFSET - surface
+		maximum_cut = maxf(maximum_cut, grade_cut)
 		surfaces[index] = surface
 	if maximum_cut > _parameters.maximum_centerline_cut:
 		return

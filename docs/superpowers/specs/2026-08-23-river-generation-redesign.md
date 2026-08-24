@@ -26,7 +26,7 @@ Calculate one downstream neighbor and accumulated upstream area for each hydrolo
 
 Keep a channel component only when it has an upstream crossing into the visible world and a downstream crossing out of it. Retain all components that pass; do not rank them by global size. Do not render a branch whose first above-threshold point is inside the visible world. Interior springs, ponds, wetlands, lakes, and seasonal channels remain out of scope.
 
-Reject a component if its required channel grade would lower any centerline sample more than 2.0 metres below the base terrain. This prevents a filled routing surface from creating a deep artificial canyon. If no component remains, the seed has no visible river.
+Reject a component if maintaining its downstream grade requires lowering the water surface more than 2.0 metres below the local drainage surface. Intended channel depth does not count toward this grade-correction limit. This prevents a filled routing surface from creating an artificial canyon without limiting the designed river depth. If no component remains, the seed has no visible river.
 
 ## Shared Channel Profile
 
@@ -47,7 +47,7 @@ The water surface is level across each channel section and never rises downstrea
 
 ## Initial Tuning Values
 
-Start channel visibility at 4,096 square metres of accumulated upstream area. Use gradual power curves from that threshold to produce full water widths from 1.5 to 6.0 metres and water depths from 0.3 to 1.2 metres. Set bank falloff from the local depth, with a range of 2.0 to 4.8 metres.
+Start channel visibility at 4,096 square metres of accumulated upstream area. Use gradual power curves from that threshold to produce full water widths from 1.5 to 6.0 metres and center depths from 0.6 to 1.8 metres. Set bank falloff from the local depth, with a range of 2.0 to 4.8 metres.
 
 Expose the threshold, width range, depth range, bank falloff range, and maximum centerline cut for hands-on editor tuning. These are scene-selection and feel values, not separate generation modes. The fixed seed and automated behavior tests must remain deterministic for any chosen values.
 
@@ -55,7 +55,7 @@ Expose the threshold, width range, depth range, bank falloff range, and maximum 
 
 Start from the unchanged visible base height field. Carve only retained visible channel corridors.
 
-For each sampled section, lower terrain to the bed inside the water width, then blend through a smooth bank profile to the unchanged terrain. Apply the complete cross-section over several terrain cells. Never lower only the centerline cell.
+For each sampled section, retain full depth across the central 60 percent of the water half-width. Use the remaining 40 percent as a submerged slope that meets the water surface at the mesh edge, then blend through a smooth dry-bank profile to unchanged terrain. Apply the complete cross-section over several terrain cells. Never lower only the centerline cell.
 
 At confluences, use the union of the incoming and outgoing channel corridors. A terrain cell can be lowered by more than one corridor, but the lowest resulting profile wins. Terrain outside all retained corridors remains bit-for-bit equal to the base height field.
 

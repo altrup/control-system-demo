@@ -30,7 +30,18 @@ func test_channel_dimensions_grow_with_accumulated_area() -> void:
 	assert_gt(large.x, small.x)
 	assert_gt(large.y, small.y)
 	assert_lte(large.x, 6.0)
-	assert_lte(large.y, 1.2)
+	assert_lte(large.y, 1.8)
+
+
+func test_grade_limit_does_not_include_intended_channel_depth() -> void:
+	var parameters := _parameters(2.0)
+	parameters.minimum_depth = 3.0
+	parameters.maximum_depth = 3.0
+	parameters.maximum_centerline_cut = 0.1
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 3, parameters)
+	var branches: Array = network.call("build", _east_facing_slope())
+
+	assert_false(branches.is_empty())
 
 
 func test_water_never_rises_downstream() -> void:

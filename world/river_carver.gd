@@ -1,6 +1,7 @@
 extends RefCounted
 
 const RiverNetwork := preload("res://world/river_network.gd")
+const FLAT_BED_RATIO := 0.6
 
 var _region_size: int
 
@@ -59,13 +60,16 @@ func _carve_section(
 			var water_height := lerpf(start_point.position.y, end_point.position.y, progress)
 			var depth := lerpf(start_point.depth, end_point.depth, progress)
 			var bed_height := water_height - depth
+			var bed_half_width := half_width * FLAT_BED_RATIO
 			var cell := z * _region_size + x
 			var profile_height: float
-			if distance <= half_width:
+			if distance <= bed_half_width:
+				profile_height = bed_height
+			elif distance <= half_width:
 				profile_height = lerpf(
 					bed_height,
 					water_height,
-					smoothstep(0.0, half_width, distance)
+					smoothstep(bed_half_width, half_width, distance)
 				)
 			else:
 				profile_height = lerpf(
