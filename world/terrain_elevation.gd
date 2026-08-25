@@ -1,6 +1,6 @@
 extends RefCounted
 
-const DEFAULT_SEA_LEVEL := -5.0
+const DEFAULT_SEA_LEVEL := -2.0
 const COAST_THRESHOLD := -0.18
 const COORDINATE_OFFSET := Vector2(4096.0, 4096.0)
 

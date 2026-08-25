@@ -67,26 +67,26 @@ func test_landforms_include_mountain_relief_and_stable_ocean_areas() -> void:
 	assert_gte(highest - lowest, 35.0)
 
 
-func test_lowered_sea_exposes_shallow_coastal_land() -> void:
+func test_default_sea_floods_land_below_minus_two_metres() -> void:
 	var elevation_script := load(TERRAIN_ELEVATION_PATH) as GDScript
 	var elevation: RefCounted = elevation_script.new(22)
-	var shallow_coast := Vector2.INF
-	var deep_ocean := Vector2.INF
+	var shallow_ocean := Vector2.INF
+	var coastal_land := Vector2.INF
 	for x in range(-1024, 1024, 16):
 		for z in range(-1024, 1024, 16):
 			var position := Vector2(x, z)
 			var height := elevation.call("height_at", position) as float
-			if shallow_coast == Vector2.INF and height > -4.5 and height < -0.5:
-				shallow_coast = position
-			if deep_ocean == Vector2.INF and height < -5.5:
-				deep_ocean = position
+			if shallow_ocean == Vector2.INF and height > -2.5 and height < -2.1:
+				shallow_ocean = position
+			if coastal_land == Vector2.INF and height > -1.9 and height < -1.5:
+				coastal_land = position
 
-	assert_ne(shallow_coast, Vector2.INF)
-	assert_ne(deep_ocean, Vector2.INF)
-	if shallow_coast != Vector2.INF:
-		assert_false(elevation.call("is_ocean", shallow_coast))
-	if deep_ocean != Vector2.INF:
-		assert_true(elevation.call("is_ocean", deep_ocean))
+	assert_ne(shallow_ocean, Vector2.INF)
+	assert_ne(coastal_land, Vector2.INF)
+	if shallow_ocean != Vector2.INF:
+		assert_true(elevation.call("is_ocean", shallow_ocean))
+	if coastal_land != Vector2.INF:
+		assert_false(elevation.call("is_ocean", coastal_land))
 
 
 func test_ocean_surface_includes_submerged_river_mouths() -> void:
