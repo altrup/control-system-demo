@@ -6,6 +6,7 @@ const RiverParameters := preload("res://world/river_parameters.gd")
 const TerrainElevation := preload("res://world/terrain_elevation.gd")
 
 const DEFAULT_SEED := 22
+const DEFAULT_SEA_LEVEL := TerrainElevation.DEFAULT_SEA_LEVEL
 
 
 class StreamSegment:
@@ -56,6 +57,7 @@ const PLAYER_SPAWN_CLEARANCE := 6.0
 
 var _terrain_elevation: TerrainElevation
 var _world_seed: int
+var _sea_level: float
 var _river_parameters: RiverParameters
 var _full_domain: bool
 var _terrain_size: int
@@ -72,9 +74,11 @@ var _player_spawn := FALLBACK_PLAYER_SPAWN
 func _init(
 	world_seed: int,
 	river_parameters: RiverParameters = null,
-	full_domain: bool = false
+	full_domain: bool = false,
+	sea_level: float = DEFAULT_SEA_LEVEL
 ) -> void:
 	_world_seed = world_seed
+	_sea_level = sea_level
 	_full_domain = full_domain
 	_terrain_size = FULL_DOMAIN_SIZE if full_domain else REGION_SIZE
 	_terrain_min = FULL_DOMAIN_MIN if full_domain else WORLD_MIN
@@ -87,7 +91,7 @@ func _init(
 	_river_parameters = (
 		river_parameters if river_parameters != null else RiverParameters.new()
 	)
-	_terrain_elevation = TerrainElevation.new(world_seed)
+	_terrain_elevation = TerrainElevation.new(world_seed, sea_level)
 	_generate_landscape()
 
 
@@ -169,7 +173,7 @@ func has_ocean_surface_at(position: Vector2) -> bool:
 
 
 func sea_level() -> float:
-	return TerrainElevation.SEA_LEVEL
+	return _sea_level
 
 
 static func tree_count_for_region_size(region_size: int) -> int:

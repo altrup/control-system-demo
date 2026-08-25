@@ -10,6 +10,7 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 
 @export_group("World")
 @export var world_seed := WorldGenerator.DEFAULT_SEED
+@export_range(-20.0, 10.0, 0.5, "suffix:m") var sea_level := WorldGenerator.DEFAULT_SEA_LEVEL
 @export var preview_full_generation_domain := false:
 	set(value):
 		preview_full_generation_domain = value
@@ -61,7 +62,7 @@ func _configure_terrain_storage() -> void:
 func _generate_world(full_domain: bool = false) -> void:
 	water.mesh = null
 	var generator := WorldGenerator.new(
-		world_seed, _create_river_parameters(), full_domain
+		world_seed, _create_river_parameters(), full_domain, sea_level
 	)
 	_update_ocean(generator)
 	terrain.region_size = Terrain3D.SIZE_64

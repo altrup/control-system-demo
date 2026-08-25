@@ -1,6 +1,7 @@
 extends GutTest
 
 const GENERATOR_PATH := "res://world/world_generator.gd"
+const TERRAIN_ELEVATION_PATH := "res://world/terrain_elevation.gd"
 
 
 func test_seed_repeats_generated_world() -> void:
@@ -66,9 +67,33 @@ func test_landforms_include_mountain_relief_and_stable_ocean_areas() -> void:
 	assert_gte(highest - lowest, 35.0)
 
 
+func test_lowered_sea_exposes_shallow_coastal_land() -> void:
+	var elevation_script := load(TERRAIN_ELEVATION_PATH) as GDScript
+	var elevation: RefCounted = elevation_script.new(22)
+	var shallow_coast := Vector2.INF
+	var deep_ocean := Vector2.INF
+	for x in range(-1024, 1024, 16):
+		for z in range(-1024, 1024, 16):
+			var position := Vector2(x, z)
+			var height := elevation.call("height_at", position) as float
+			if shallow_coast == Vector2.INF and height > -4.5 and height < -0.5:
+				shallow_coast = position
+			if deep_ocean == Vector2.INF and height < -5.5:
+				deep_ocean = position
+
+	assert_ne(shallow_coast, Vector2.INF)
+	assert_ne(deep_ocean, Vector2.INF)
+	if shallow_coast != Vector2.INF:
+		assert_false(elevation.call("is_ocean", shallow_coast))
+	if deep_ocean != Vector2.INF:
+		assert_true(elevation.call("is_ocean", deep_ocean))
+
+
 func test_ocean_surface_includes_submerged_river_mouths() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
+	var generator: RefCounted = generator_script.new(
+		generator_script.DEFAULT_SEED, null, false, 0.0
+	)
 	assert_true(generator.has_method("has_ocean_surface_at"))
 	if not generator.has_method("has_ocean_surface_at"):
 		return

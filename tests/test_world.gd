@@ -32,8 +32,30 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 	assert_has(property_names, &"river_channel_threshold")
 	assert_has(property_names, &"river_minimum_width")
 	assert_has(property_names, &"river_maximum_depth")
+	assert_has(property_names, &"sea_level")
 	assert_has(property_names, &"preview_full_generation_domain")
 	assert_does_not_have(property_names, &"river_parameters")
+
+
+func test_sea_level_controls_the_generated_ocean_surface() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var property_names: Array[StringName] = []
+	for property in world.get_property_list():
+		property_names.append(property.name)
+	if not property_names.has(&"sea_level"):
+		fail_test("The world exposes sea level")
+		return
+
+	world.set("sea_level", -2.0)
+	await world.call("_generate_world")
+	var ocean := world.get_node_or_null("Ocean") as MeshInstance3D
+	assert_not_null(ocean)
+	if ocean == null or not ocean.mesh is ArrayMesh:
+		return
+	_handle_terrain3d_deprecation()
+	assert_almost_eq(ocean.mesh.get_aabb().position.y, -2.0, 0.001)
 
 
 func test_world_maps_inspector_fields_to_generation_parameters() -> void:
@@ -138,6 +160,12 @@ func test_world_has_an_ocean_surface_at_sea_level() -> void:
 	assert_eq(ocean.position.y, 0.0)
 	if not ocean.mesh is ArrayMesh:
 		return
+	var generator := WorldGenerator.new(WorldGenerator.DEFAULT_SEED)
+	assert_almost_eq(
+		ocean.mesh.get_aabb().position.y,
+		generator.sea_level(),
+		0.001
+	)
 	assert_gt(ocean.mesh.get_surface_count(), 0)
 
 
