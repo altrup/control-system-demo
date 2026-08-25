@@ -16,7 +16,7 @@ func test_world_uses_half_meter_regions_centered_on_the_origin() -> void:
 
 	assert_eq(terrain.region_size, Terrain3D.SIZE_64)
 	assert_eq(terrain.vertex_spacing, 0.5)
-	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 16, 3.0))
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 64, 5.0))
 
 
 func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
@@ -28,6 +28,7 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 		property_names.append(property.name)
 	_handle_terrain3d_deprecation()
 
+	assert_has(property_names, &"river_stream_threshold")
 	assert_has(property_names, &"river_channel_threshold")
 	assert_has(property_names, &"river_minimum_width")
 	assert_has(property_names, &"river_maximum_depth")
@@ -39,14 +40,16 @@ func test_world_maps_inspector_fields_to_generation_parameters() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
-	world.set("river_channel_threshold", 2048.0)
+	world.set("river_stream_threshold", 4096.0)
+	world.set("river_channel_threshold", 32768.0)
 	world.set("river_maximum_width", 7.0)
 	world.set("river_maximum_depth", 1.5)
 
 	var parameters: Resource = world.call("_create_river_parameters")
 	_handle_terrain3d_deprecation()
 
-	assert_eq(parameters.get("channel_threshold"), 2048.0)
+	assert_eq(parameters.get("stream_threshold"), 4096.0)
+	assert_eq(parameters.get("channel_threshold"), 32768.0)
 	assert_eq(parameters.get("maximum_width"), 7.0)
 	assert_eq(parameters.get("maximum_depth"), 1.5)
 
@@ -69,14 +72,20 @@ func test_world_uses_generated_terrain() -> void:
 	assert_not_null(terrain)
 	if terrain == null:
 		return
-	var segments: Array = WorldGenerator.new(556).stream_segments()
+	var generator := WorldGenerator.new(WorldGenerator.DEFAULT_SEED)
+	var segments: Array = generator.stream_segments()
 	var midpoint: Vector3 = segments[segments.size() / 2].start
 	assert_true(await wait_until(
-		func() -> bool: return not is_nan(terrain.data.get_height(midpoint)),
-		3.0
+		func() -> bool: return terrain.data.get_height(midpoint) < midpoint.y,
+		5.0
 	))
 	_handle_terrain3d_deprecation()
 	assert_lt(terrain.data.get_height(midpoint), midpoint.y)
+	assert_almost_eq(
+		terrain.data.get_height(midpoint),
+		generator.height_at(Vector2(midpoint.x, midpoint.z)),
+		0.1
+	)
 	assert_eq(world.find_children("*", "CSGShape3D", true, false).size(), 0)
 
 
@@ -85,15 +94,15 @@ func test_regeneration_removes_stale_terrain_regions() -> void:
 	if world == null:
 		return
 	var terrain := world.get_node("Terrain3D") as Terrain3D
-	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 16, 3.0))
+	assert_true(await wait_until(func() -> bool: return terrain.data.get_region_count() == 64, 5.0))
 	var stale_region := terrain.data.get_regions_active()[0].duplicate(true) as Terrain3DRegion
-	stale_region.location = Vector2i(2, 0)
+	stale_region.location = Vector2i(4, 0)
 	assert_eq(terrain.data.add_region(stale_region), OK)
-	assert_eq(terrain.data.get_region_count(), 17)
+	assert_eq(terrain.data.get_region_count(), 65)
 
 	await world.call("_generate_world")
 
-	assert_eq(terrain.data.get_region_count(), 16)
+	assert_eq(terrain.data.get_region_count(), 64)
 
 
 func test_world_has_generated_water_and_separate_trees() -> void:
@@ -106,13 +115,30 @@ func test_world_has_generated_water_and_separate_trees() -> void:
 	assert_not_null(water)
 	if trees == null or water == null:
 		return
-	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 112, 3.0))
+	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 448, 5.0))
 	_handle_terrain3d_deprecation()
 
 	assert_true(water.mesh is ArrayMesh)
 	var water_size := water.mesh.get_aabb().size
 	assert_gt(maxf(water_size.x, water_size.z), 20.0)
-	assert_eq(trees.get_child_count(), 112)
+	assert_eq(trees.get_child_count(), 448)
+
+
+func test_world_has_an_ocean_surface_at_sea_level() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var ocean := world.get_node_or_null("Ocean") as MeshInstance3D
+	assert_not_null(ocean)
+	if ocean == null:
+		return
+	_handle_terrain3d_deprecation()
+
+	assert_true(ocean.mesh is ArrayMesh)
+	assert_eq(ocean.position.y, 0.0)
+	if not ocean.mesh is ArrayMesh:
+		return
+	assert_gt(ocean.mesh.get_surface_count(), 0)
 
 
 func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
@@ -133,9 +159,9 @@ func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
 	var preview_bounds := world.get_node_or_null("PreviewBounds") as MeshInstance3D
 	_handle_terrain3d_deprecation()
 
-	assert_eq(terrain.data.get_region_count(), 144)
-	assert_gte(water.mesh.get_aabb().position.x, -192.0)
-	assert_lte(water.mesh.get_aabb().end.x, 192.0)
+	assert_eq(terrain.data.get_region_count(), 256)
+	assert_gte(water.mesh.get_aabb().position.x, -1024.0)
+	assert_lte(water.mesh.get_aabb().end.x, 1024.0)
 	assert_false(trees.visible)
 	assert_not_null(preview_bounds)
 	if preview_bounds == null:
@@ -144,7 +170,7 @@ func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
 
 	await world.call("_generate_world", false)
 	_handle_terrain3d_deprecation()
-	assert_eq(terrain.data.get_region_count(), 16)
+	assert_eq(terrain.data.get_region_count(), 64)
 	assert_true(trees.visible)
 	assert_false(preview_bounds.visible)
 
@@ -189,10 +215,10 @@ func test_generated_water_stays_inside_world_bounds() -> void:
 	))
 	_handle_terrain3d_deprecation()
 	var bounds := water.mesh.get_aabb()
-	assert_gte(bounds.position.x, -64.0)
-	assert_gte(bounds.position.z, -64.0)
-	assert_lte(bounds.end.x, 64.0)
-	assert_lte(bounds.end.z, 64.0)
+	assert_gte(bounds.position.x, -128.0)
+	assert_gte(bounds.position.z, -128.0)
+	assert_lte(bounds.end.x, 128.0)
+	assert_lte(bounds.end.z, 128.0)
 
 
 func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
@@ -211,7 +237,7 @@ func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
 	var arrays := water.mesh.surface_get_arrays(0)
 	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
 	var point_count := 0
-	for branch in WorldGenerator.new(556).stream_branches():
+	for branch in WorldGenerator.new(WorldGenerator.DEFAULT_SEED).stream_branches():
 		point_count += branch.points.size()
 
 	assert_lt(vertices.size(), point_count * 6)
@@ -229,9 +255,14 @@ func test_player_lands_in_world() -> void:
 
 	var player := players[0] as CharacterBody3D
 	await wait_physics_frames(30)
+	var terrain := world.get_node("Terrain3D") as Terrain3D
 	_handle_terrain3d_deprecation()
 	assert_true(player.is_on_floor())
-	assert_gt(player.global_position.y, 1.0)
+	assert_almost_eq(
+		player.global_position.y,
+		terrain.data.get_height(player.global_position),
+		0.1
+	)
 
 
 func _instantiate_world() -> Node3D:

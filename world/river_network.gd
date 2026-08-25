@@ -35,19 +35,31 @@ const CHANNEL_MAXIMUM_DROP := 0.04
 const BANK_FREEBOARD := 0.15
 const CURVE_SAMPLE_INTERVAL := 0.5
 const CURVE_MAX_OFFSET := 0.75
+const VALLEY_MINIMUM_DEPTH := 0.6
+const VALLEY_MAXIMUM_DEPTH := 4.0
+const VALLEY_MINIMUM_RADIUS := 4.0
+const VALLEY_MAXIMUM_RADIUS := 18.0
+const VALLEY_ONSET_STREAM_RATIO := 0.25
 
-var _region_size: int
-var _padding: int
+var _region_size: float
+var _padding: float
 var _grid_size: int
 var _parameters: RiverParameters
-var _output_size: int
+var _output_size: float
+var _sample_spacing: float
 var _full_domain_output := false
 
 
-func _init(region_size: int, padding: int, parameters: RiverParameters = null) -> void:
+func _init(
+	region_size: float,
+	padding: float,
+	parameters: RiverParameters = null,
+	sample_spacing: float = 1.0
+) -> void:
 	_region_size = region_size
 	_padding = padding
-	_grid_size = region_size + padding * 2
+	_sample_spacing = sample_spacing
+	_grid_size = roundi((region_size + padding * 2.0) / sample_spacing)
 	_output_size = region_size
 	_parameters = parameters if parameters != null else RiverParameters.new()
 
@@ -60,6 +72,69 @@ func build_full_domain(base_heights: PackedFloat32Array) -> Array[ChannelBranch]
 	return _build(base_heights, true)
 
 
+func erode_valleys(base_heights: PackedFloat32Array) -> PackedFloat32Array:
+	if base_heights.size() != _grid_size * _grid_size:
+		push_error("River height map dimensions do not match the generation domain.")
+		return PackedFloat32Array()
+	var ascending_cells: Array[int] = []
+	var routing_heights := _fill_depressions(base_heights, ascending_cells)
+	var downstream := _flow_directions(routing_heights)
+	ascending_cells.reverse()
+	var accumulation := _flow_accumulation(downstream, ascending_cells)
+	var eroded := base_heights.duplicate()
+	for cell in accumulation.size():
+		var dimensions := valley_dimensions_for_area(accumulation[cell])
+		if dimensions == Vector2.ZERO:
+			continue
+		_erode_valley_section(eroded, base_heights, cell, dimensions.x, dimensions.y)
+	return eroded
+
+
+func valley_dimensions_for_area(area: float) -> Vector2:
+	var onset_area := _parameters.stream_threshold * VALLEY_ONSET_STREAM_RATIO
+	if area <= onset_area:
+		return Vector2.ZERO
+	var ratio := area / _parameters.channel_threshold
+	var fade := smoothstep(
+		onset_area,
+		_parameters.channel_threshold,
+		minf(area, _parameters.channel_threshold)
+	)
+	var scale := pow(maxf(ratio, 1.0), 0.3)
+	return Vector2(
+		clampf(
+			VALLEY_MINIMUM_RADIUS * scale,
+			VALLEY_MINIMUM_RADIUS,
+			VALLEY_MAXIMUM_RADIUS
+		) * fade,
+		clampf(
+			VALLEY_MINIMUM_DEPTH * scale,
+			VALLEY_MINIMUM_DEPTH,
+			VALLEY_MAXIMUM_DEPTH
+		) * fade
+	)
+
+
+func _erode_valley_section(
+	eroded: PackedFloat32Array,
+	base_heights: PackedFloat32Array,
+	cell: int,
+	radius: float,
+	depth: float
+) -> void:
+	var center_x := cell % _grid_size
+	var center_z: int = cell / _grid_size
+	var extent := ceili(radius / _sample_spacing)
+	for z in range(maxi(1, center_z - extent), mini(_grid_size - 1, center_z + extent + 1)):
+		for x in range(maxi(1, center_x - extent), mini(_grid_size - 1, center_x + extent + 1)):
+			var distance := Vector2(x - center_x, z - center_z).length() * _sample_spacing
+			if distance >= radius:
+				continue
+			var blend := smoothstep(1.0, 0.0, distance / radius)
+			var target := z * _grid_size + x
+			eroded[target] = minf(eroded[target], base_heights[target] - depth * blend)
+
+
 func _build(
 	base_heights: PackedFloat32Array,
 	full_domain: bool
@@ -67,7 +142,7 @@ func _build(
 	if base_heights.size() != _grid_size * _grid_size:
 		push_error("River height map dimensions do not match the generation domain.")
 		return []
-	_output_size = _grid_size
+	_output_size = _grid_size * _sample_spacing
 	_full_domain_output = true
 
 	var ascending_cells: Array[int] = []
@@ -90,7 +165,14 @@ func _build(
 
 
 func dimensions_for_area(area: float) -> Vector3:
-	var ratio := maxf(area / _parameters.channel_threshold, 1.0)
+	var ratio := maxf(area / _parameters.channel_threshold, 0.0001)
+	var profile_fade := 1.0
+	if _parameters.stream_threshold < _parameters.channel_threshold:
+		profile_fade = smoothstep(
+			_parameters.stream_threshold / _parameters.channel_threshold,
+			1.0,
+			minf(ratio, 1.0)
+		)
 	var minimum_width := minf(_parameters.minimum_width, _parameters.maximum_width)
 	var maximum_width := maxf(_parameters.minimum_width, _parameters.maximum_width)
 	var minimum_depth := minf(_parameters.minimum_depth, _parameters.maximum_depth)
@@ -103,19 +185,22 @@ func dimensions_for_area(area: float) -> Vector3:
 		_parameters.minimum_bank_falloff,
 		_parameters.maximum_bank_falloff
 	)
-	var depth := clampf(
+	var river_depth := clampf(
 		minimum_depth * pow(ratio, _parameters.depth_growth_exponent),
 		minimum_depth,
 		maximum_depth
 	)
+	var depth := lerpf(0.02, river_depth, profile_fade)
+	var river_width := clampf(
+		minimum_width * pow(ratio, _parameters.width_growth_exponent),
+		minimum_width,
+		maximum_width
+	)
+	var river_bank := clampf(river_depth * 4.0, minimum_bank, maximum_bank)
 	return Vector3(
-		clampf(
-			minimum_width * pow(ratio, _parameters.width_growth_exponent),
-			minimum_width,
-			maximum_width
-		),
+		lerpf(0.1, river_width, profile_fade),
 		depth,
-		clampf(depth * 4.0, minimum_bank, maximum_bank)
+		lerpf(0.1, river_bank, profile_fade)
 	)
 
 
@@ -129,12 +214,12 @@ func _retain_full_domain(
 	var incoming_count: Dictionary[int, int] = {}
 	for cell in downstream.size():
 		var next := downstream[cell]
-		if next >= 0 and accumulation[cell] >= _parameters.channel_threshold:
+		if next >= 0 and accumulation[cell] >= _parameters.stream_threshold:
 			incoming_count[next] = incoming_count.get(next, 0) + 1
 	for cell in downstream.size():
 		if (
 			downstream[cell] >= 0
-			and accumulation[cell] >= _parameters.channel_threshold
+			and accumulation[cell] >= _parameters.stream_threshold
 			and incoming_count.get(cell, 0) == 0
 		):
 			_retain_domain_path(
@@ -373,6 +458,9 @@ func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
 		controls.append(position)
 	controls = _cut_corners(controls)
 	controls = _cut_corners(controls)
+	controls = _cut_corners(controls)
+	controls = _cut_corners(controls)
+	controls = _cut_corners(controls)
 
 	var curve := Curve3D.new()
 	curve.bake_interval = CURVE_SAMPLE_INTERVAL
@@ -382,7 +470,14 @@ func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
 		var handle := (following - previous) / 6.0
 		curve.add_point(controls[index], -handle, handle)
 
-	var baked := curve.get_baked_points()
+	var baked := PackedVector3Array()
+	var baked_length := curve.get_baked_length()
+	var bake_distance := 0.0
+	while bake_distance < baked_length:
+		baked.append(curve.sample_baked(bake_distance, true))
+		bake_distance += CURVE_SAMPLE_INTERVAL
+	baked.append(curve.sample_baked(baked_length, true))
+	baked = _smooth_sampled_path(baked)
 	var baked_distances := PackedFloat32Array([0.0])
 	for index in range(1, baked.size()):
 		baked_distances.append(
@@ -420,6 +515,20 @@ func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
 	return curved
 
 
+func _smooth_sampled_path(points: PackedVector3Array) -> PackedVector3Array:
+	var smoothed := points
+	for _iteration in 4:
+		var source := smoothed
+		smoothed = source.duplicate()
+		for index in range(1, source.size() - 1):
+			smoothed[index] = (
+				source[index - 1] * 0.25
+				+ source[index] * 0.5
+				+ source[index + 1] * 0.25
+			)
+	return smoothed
+
+
 func _point_distances(points: Array[ChannelPoint]) -> PackedFloat32Array:
 	var distances := PackedFloat32Array([0.0])
 	for index in range(1, points.size()):
@@ -446,9 +555,7 @@ func _constrain_water_to_banks(
 	base_heights: PackedFloat32Array
 ) -> void:
 	var water_heights: Dictionary[Vector2, float] = {}
-	var point_count := 0
 	for branch in branches:
-		point_count += branch.points.size()
 		for index in branch.points.size():
 			var point := branch.points[index]
 			var previous := branch.points[maxi(0, index - 1)].position
@@ -469,39 +576,72 @@ func _constrain_water_to_banks(
 				bank_height - BANK_FREEBOARD
 			)
 
-	# ponytail: Full relaxation suits this small graph; use a topological pass if maps grow.
-	for _iteration in point_count:
-		var changed := false
-		for branch in branches:
-			for index in range(branch.points.size() - 1):
-				var current := branch.points[index]
-				var next := branch.points[index + 1]
-				var current_key := Vector2(current.position.x, current.position.z)
-				var next_key := Vector2(next.position.x, next.position.z)
-				var distance := current_key.distance_to(next_key)
-				var maximum_next_height := (
-					water_heights[current_key] - CHANNEL_MINIMUM_DROP * distance
-				)
-				if water_heights[next_key] > maximum_next_height:
-					water_heights[next_key] = maximum_next_height
-					changed = true
-				var maximum_current_height := (
-					water_heights[next_key] + CHANNEL_MAXIMUM_DROP * distance
-				)
-				if water_heights[current_key] > maximum_current_height:
-					water_heights[current_key] = maximum_current_height
-					changed = true
-		if not changed:
-			break
+	_constrain_water_grades(branches, water_heights)
 
 	for branch in branches:
 		for point in branch.points:
 			point.position.y = water_heights[Vector2(point.position.x, point.position.z)]
 
 
+func _constrain_water_grades(
+	branches: Array[ChannelBranch],
+	water_heights: Dictionary[Vector2, float]
+) -> void:
+	var outgoing: Dictionary[Vector2, Array] = {}
+	var incoming: Dictionary[Vector2, Array] = {}
+	var incoming_count: Dictionary[Vector2, int] = {}
+	for point in water_heights:
+		incoming_count[point] = 0
+	for branch in branches:
+		for index in range(branch.points.size() - 1):
+			var current_position := branch.points[index].position
+			var next_position := branch.points[index + 1].position
+			var current := Vector2(current_position.x, current_position.z)
+			var next := Vector2(next_position.x, next_position.z)
+			var distance := current.distance_to(next)
+			if not outgoing.has(current):
+				outgoing[current] = []
+			if not incoming.has(next):
+				incoming[next] = []
+			outgoing[current].append(Vector3(next.x, next.y, distance))
+			incoming[next].append(Vector3(current.x, current.y, distance))
+			incoming_count[next] = incoming_count.get(next, 0) + 1
+
+	var queue: Array[Vector2] = []
+	for point in incoming_count:
+		if incoming_count[point] == 0:
+			queue.append(point)
+	var order: Array[Vector2] = []
+	var queue_index := 0
+	while queue_index < queue.size():
+		var current := queue[queue_index]
+		queue_index += 1
+		order.append(current)
+		for edge: Vector3 in outgoing.get(current, []):
+			var next := Vector2(edge.x, edge.y)
+			water_heights[next] = minf(
+				water_heights[next],
+				water_heights[current] - CHANNEL_MINIMUM_DROP * edge.z
+			)
+			incoming_count[next] -= 1
+			if incoming_count[next] == 0:
+				queue.append(next)
+
+	for index in range(order.size() - 1, -1, -1):
+		var current := order[index]
+		for edge: Vector3 in incoming.get(current, []):
+			var previous := Vector2(edge.x, edge.y)
+			water_heights[previous] = minf(
+				water_heights[previous],
+				water_heights[current] + CHANNEL_MAXIMUM_DROP * edge.z
+			)
+
+
 func _sample_height(base_heights: PackedFloat32Array, position: Vector2) -> float:
 	var world_min := _region_size * -0.5
-	var grid_position := position - Vector2.ONE * world_min + Vector2.ONE * _padding
+	var grid_position := (
+		position - Vector2.ONE * world_min + Vector2.ONE * _padding
+	) / _sample_spacing
 	var x0 := clampi(floori(grid_position.x), 0, _grid_size - 1)
 	var z0 := clampi(floori(grid_position.y), 0, _grid_size - 1)
 	var x1 := mini(x0 + 1, _grid_size - 1)
@@ -641,7 +781,7 @@ func _is_inside_position(position: Vector3) -> bool:
 
 func _is_output_edge_sample(position: Vector3) -> bool:
 	var world_min := _output_size * -0.5
-	var world_max_sample := world_min + _output_size - 1.0
+	var world_max_sample := world_min + _output_size - _sample_spacing
 	return (
 		position.x <= world_min
 		or position.z <= world_min
@@ -677,7 +817,12 @@ func _fill_depressions(
 				if visited[neighbor] == 1:
 					continue
 				visited[neighbor] = 1
-				filled[neighbor] = maxf(filled[neighbor], filled[cell] + DEPRESSION_SLOPE)
+				var distance := Vector2(
+					neighbor_x - cell_x, neighbor_z - cell_z
+				).length() * _sample_spacing
+				filled[neighbor] = maxf(
+					filled[neighbor], filled[cell] + DEPRESSION_SLOPE * distance
+				)
 				_heap_push(heap, neighbor, filled)
 	return filled
 
@@ -695,7 +840,10 @@ func _flow_directions(heights: PackedFloat32Array) -> PackedInt32Array:
 					if neighbor_x == x and neighbor_z == z:
 						continue
 					var neighbor := neighbor_z * _grid_size + neighbor_x
-					var distance := Vector2(x, z).distance_to(Vector2(neighbor_x, neighbor_z))
+					var distance := (
+						Vector2(x, z).distance_to(Vector2(neighbor_x, neighbor_z))
+						* _sample_spacing
+					)
 					var slope := (heights[cell] - heights[neighbor]) / distance
 					if slope > steepest_slope:
 						steepest_slope = slope
@@ -709,7 +857,7 @@ func _flow_accumulation(
 ) -> PackedFloat32Array:
 	var accumulation := PackedFloat32Array()
 	accumulation.resize(downstream.size())
-	accumulation.fill(1.0)
+	accumulation.fill(_sample_spacing * _sample_spacing)
 	for cell in descending_cells:
 		if downstream[cell] >= 0:
 			accumulation[downstream[cell]] += accumulation[cell]
@@ -719,8 +867,8 @@ func _flow_accumulation(
 func _cell_position(cell: int) -> Vector2:
 	var world_min := _region_size * -0.5
 	return Vector2(
-		cell % _grid_size - _padding + world_min,
-		cell / _grid_size - _padding + world_min
+		(cell % _grid_size) * _sample_spacing - _padding + world_min,
+		(cell / _grid_size) * _sample_spacing - _padding + world_min
 	)
 
 

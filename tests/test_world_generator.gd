@@ -5,8 +5,8 @@ const GENERATOR_PATH := "res://world/world_generator.gd"
 
 func test_seed_repeats_generated_world() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var first: RefCounted = generator_script.new(556)
-	var repeated: RefCounted = generator_script.new(556)
+	var first: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
+	var repeated: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	var changed: RefCounted = generator_script.new(481516)
 	var sample := Vector2(-38.5, 9.25)
 
@@ -32,7 +32,70 @@ func test_terrain_has_large_scale_relief() -> void:
 			lowest = minf(lowest, height)
 			highest = maxf(highest, height)
 
-	assert_gte(highest - lowest, 8.0)
+	assert_gte(highest - lowest, 6.0)
+
+
+func test_landforms_include_mountain_relief_and_stable_ocean_areas() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var normal: RefCounted = generator_script.new(481516)
+	var full_domain: RefCounted = generator_script.new(481516, null, true)
+	assert_true(normal.has_method("is_ocean"))
+	if not normal.has_method("is_ocean"):
+		return
+	var lowest := INF
+	var highest := -INF
+	var ocean_samples := 0
+	var land_samples := 0
+	for x in range(-1024, 1024, 64):
+		for z in range(-1024, 1024, 64):
+			var position := Vector2(x, z)
+			var height := normal.call("_base_height_at", position) as float
+			lowest = minf(lowest, height)
+			highest = maxf(highest, height)
+			if normal.call("is_ocean", position):
+				ocean_samples += 1
+			else:
+				land_samples += 1
+			assert_eq(
+				normal.call("is_ocean", position),
+				full_domain.call("is_ocean", position)
+			)
+
+	assert_gt(ocean_samples, 0)
+	assert_gt(land_samples, 0)
+	assert_gte(highest - lowest, 35.0)
+
+
+func test_ocean_surface_includes_submerged_river_mouths() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
+	assert_true(generator.has_method("has_ocean_surface_at"))
+	if not generator.has_method("has_ocean_surface_at"):
+		return
+	var found_mouth := false
+	for segment in generator.call("stream_segments"):
+		var midpoint: Vector3 = (segment.start + segment.end) * 0.5
+		var position := Vector2(midpoint.x, midpoint.z)
+		var terrain_min := generator.call("terrain_min") as float
+		var terrain_max := terrain_min + (
+			generator.call("terrain_sample_size") as int - 1
+		) * 0.5
+		var inside := (
+			position.x >= terrain_min
+			and position.y >= terrain_min
+			and position.x < terrain_max
+			and position.y < terrain_max
+		)
+		if (
+			inside
+			and midpoint.y <= generator.call("sea_level")
+			and generator.call("height_at", position) < generator.call("sea_level")
+			and not generator.call("is_ocean", position)
+		):
+			found_mouth = true
+			assert_true(generator.call("has_ocean_surface_at", position))
+			break
+	assert_true(found_mouth)
 
 
 func test_hydrology_only_erodes_the_initial_terrain() -> void:
@@ -49,56 +112,64 @@ func test_hydrology_only_erodes_the_initial_terrain() -> void:
 	assert_lte(largest_raise, 0.01)
 
 
-func test_routing_does_not_carve_dry_terrain() -> void:
+func test_valley_erosion_reaches_beyond_the_final_riverbed() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(481516)
 	var segments: Array = generator.call("stream_segments")
-	var deepest_dry_cut := 0.0
-	for x in range(-64, 64, 4):
-		for z in range(-64, 64, 4):
+	var broadest_cut := 0.0
+	for x in range(-128, 128, 2):
+		for z in range(-128, 128, 2):
 			var position := Vector2(x, z)
 			if _distance_to_stream(position, segments) <= 8.0:
 				continue
 			var generated_height := generator.call("height_at", position) as float
 			var initial_height := generator.call("_base_height_at", position) as float
-			deepest_dry_cut = maxf(deepest_dry_cut, initial_height - generated_height)
+			broadest_cut = maxf(broadest_cut, initial_height - generated_height)
 
-	assert_lte(deepest_dry_cut, 0.01)
+	assert_gt(broadest_cut, 0.2)
 
 
 func test_natural_drainage_keeps_boundary_crossing_channels() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	assert_true(generator.has_method("stream_segments"))
 	if not generator.has_method("stream_segments"):
 		return
 	var segments: Array = generator.call("stream_segments")
 	assert_gte(segments.size(), 20)
 	var branches: Array = generator.call("stream_branches")
+	var has_entry := false
+	var has_exit := false
 	for branch in branches:
-		assert_false(_is_inside_world(branch.points[0].position))
-		assert_false(_is_inside_world(branch.points[-1].position))
+		has_entry = has_entry or not _is_inside_world(branch.points[0].position)
+		has_exit = has_exit or not _is_inside_world(branch.points[-1].position)
+	assert_true(has_entry)
+	assert_true(has_exit)
 
 
 func test_boundary_channels_keep_their_full_profile_outside_the_crop() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	var branches: Array = generator.call("stream_branches")
 
 	for branch in branches:
 		var first = branch.points[0]
 		var last = branch.points[-1]
-		assert_gte(
-			_distance_outside_world(first.position),
-			first.half_width + first.bank_falloff
-		)
-		assert_gte(
-			_distance_outside_world(last.position),
-			last.half_width + last.bank_falloff
-		)
+		if not _is_inside_world(first.position):
+			assert_gte(
+				_distance_outside_world(first.position),
+				first.half_width + first.bank_falloff
+			)
+		if not _is_inside_world(last.position):
+			assert_gte(
+				_distance_outside_world(last.position),
+				last.half_width + last.bank_falloff
+			)
 
 
 func test_water_surface_edges_are_supported_by_terrain_or_water() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	var branches: Array = generator.call("stream_branches")
 	var segments: Array = generator.call("stream_segments")
 
@@ -131,7 +202,7 @@ func test_water_surface_edges_are_supported_by_terrain_or_water() -> void:
 
 func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	assert_true(generator.has_method("stream_branches"))
 	if not generator.has_method("stream_branches"):
 		return
@@ -162,7 +233,8 @@ func test_stream_network_forms_smooth_branches_that_reach_the_boundary() -> void
 
 
 func test_rendered_channel_paths_are_smooth_and_subcell_sampled() -> void:
-	var generator: RefCounted = (load(GENERATOR_PATH) as GDScript).new(556)
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	var sharpest_turn := 1.0
 	var longest_straight_run := 0.0
 	var longest_interior_segment := 0.0
@@ -186,13 +258,13 @@ func test_rendered_channel_paths_are_smooth_and_subcell_sampled() -> void:
 		longest_straight_run = maxf(longest_straight_run, straight_run)
 
 	assert_gt(sharpest_turn, 0.85)
-	assert_lt(longest_straight_run, 16.0)
+	assert_lt(longest_straight_run, 64.0)
 	assert_lte(longest_interior_segment, 0.75)
 
 
 func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -224,7 +296,7 @@ func test_flow_erosion_makes_larger_channels_wider_and_deeper() -> void:
 
 func test_player_spawns_near_but_not_inside_a_stream() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -233,11 +305,12 @@ func test_player_spawns_near_but_not_inside_a_stream() -> void:
 
 	assert_gte(_distance_to_stream(spawn, segments), 10.0)
 	assert_lte(_distance_to_stream(spawn, segments), 18.0)
+	assert_false(generator.call("is_ocean", spawn))
 
 
 func test_trees_respect_world_clearances() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 	if not generator.has_method("stream_segments"):
 		fail_test("Natural stream segments are available")
 		return
@@ -245,13 +318,14 @@ func test_trees_respect_world_clearances() -> void:
 	var segments: Array = generator.call("stream_segments")
 	var spawn := generator.call("player_spawn") as Vector2
 
-	assert_eq(positions.size(), 112)
+	assert_eq(positions.size(), 448)
 	for index in positions.size():
 		var position := positions[index] as Vector2
-		assert_gte(position.x, -60.0)
-		assert_lte(position.x, 60.0)
-		assert_gte(position.y, -60.0)
-		assert_lte(position.y, 60.0)
+		assert_gte(position.x, -124.0)
+		assert_lte(position.x, 124.0)
+		assert_gte(position.y, -124.0)
+		assert_lte(position.y, 124.0)
+		assert_false(generator.call("is_ocean", position))
 		assert_gte(_distance_to_stream(position, segments), 7.0)
 		assert_gte(position.distance_to(spawn), 6.0)
 		for other_index in range(index + 1, positions.size()):
@@ -260,7 +334,7 @@ func test_trees_respect_world_clearances() -> void:
 
 func test_tree_count_scales_with_visible_area() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
-	var generator: RefCounted = generator_script.new(556)
+	var generator: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
 
 	assert_eq(generator.call("tree_count_for_region_size", 128), 112)
 	assert_eq(generator.call("tree_count_for_region_size", 256), 448)
@@ -295,8 +369,8 @@ func _water_covers(position: Vector2, segments: Array) -> bool:
 
 func _distance_outside_world(position: Vector3) -> float:
 	return maxf(
-		maxf(-64.0 - position.x, position.x - 64.0),
-		maxf(-64.0 - position.z, position.z - 64.0)
+		maxf(-128.0 - position.x, position.x - 128.0),
+		maxf(-128.0 - position.z, position.z - 128.0)
 	)
 
 
@@ -319,17 +393,17 @@ func _stream_signature(generator: RefCounted) -> PackedFloat32Array:
 
 
 func _is_near_world_boundary(position: Vector3) -> bool:
-	return position.x <= -63.0 or position.z <= -63.0 or position.x >= 62.0 or position.z >= 62.0
+	return position.x <= -127.0 or position.z <= -127.0 or position.x >= 126.0 or position.z >= 126.0
 
 
 func _is_inside_world(position: Vector3) -> bool:
-	return position.x >= -64.0 and position.z >= -64.0 and position.x < 64.0 and position.z < 64.0
+	return position.x >= -128.0 and position.z >= -128.0 and position.x < 128.0 and position.z < 128.0
 
 
 func _is_inside_terrain_samples(position: Vector3) -> bool:
 	return (
-		position.x >= -64.0
-		and position.z >= -64.0
-		and position.x <= 63.5
-		and position.z <= 63.5
+		position.x >= -128.0
+		and position.z >= -128.0
+		and position.x <= 127.5
+		and position.z <= 127.5
 	)

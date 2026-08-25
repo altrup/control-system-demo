@@ -9,7 +9,8 @@ func test_default_river_parameters_match_the_design_ranges() -> void:
 		return
 	var parameters: Resource = (load(PARAMETERS_PATH) as GDScript).new()
 
-	assert_eq(parameters.get("channel_threshold"), 4096.0)
+	assert_eq(parameters.get("stream_threshold"), 4096.0)
+	assert_eq(parameters.get("channel_threshold"), 65536.0)
 	assert_eq(parameters.get("minimum_width"), 3.0)
 	assert_eq(parameters.get("maximum_width"), 8.0)
 	assert_eq(parameters.get("width_growth_exponent"), 0.45)

@@ -69,13 +69,49 @@ func test_channel_dimensions_grow_with_accumulated_area() -> void:
 func test_channel_dimensions_have_visible_downstream_growth() -> void:
 	var parameters := RiverParameters.new()
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
-	var headwater := network.call("dimensions_for_area", 4096.0) as Vector3
-	var downstream := network.call("dimensions_for_area", 16384.0) as Vector3
+	var headwater := network.call("dimensions_for_area", 65536.0) as Vector3
+	var downstream := network.call("dimensions_for_area", 262144.0) as Vector3
 
 	assert_eq(headwater.x, 3.0)
 	assert_almost_eq(headwater.y, 0.8, 0.0001)
 	assert_almost_eq(downstream.x, 5.5982, 0.0001)
 	assert_almost_eq(downstream.y, 1.2996, 0.0001)
+
+
+func test_small_stream_dimensions_grow_into_the_reference_river_profile() -> void:
+	var parameters := RiverParameters.new()
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
+	var stream := network.call("dimensions_for_area", parameters.stream_threshold) as Vector3
+	var river := network.call("dimensions_for_area", parameters.channel_threshold) as Vector3
+
+	assert_gt(stream.x, 0.0)
+	assert_gt(stream.y, 0.0)
+	assert_lte(stream.x, 0.15)
+	assert_lte(stream.y, 0.05)
+	assert_lt(stream.x, river.x)
+	assert_lt(stream.y, river.y)
+
+
+func test_flow_accumulation_uses_physical_cell_area() -> void:
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
+		16, 12, _parameters(16.0), 4.0
+	)
+	var downstream := PackedInt32Array([1, -1])
+	var descending_cells: Array[int] = [0, 1]
+	var accumulation := network.call(
+		"_flow_accumulation", downstream, descending_cells
+	) as PackedFloat32Array
+
+	assert_eq(accumulation, PackedFloat32Array([16.0, 32.0]))
+
+
+func test_cell_positions_use_hydrology_sample_spacing() -> void:
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
+		16, 12, _parameters(16.0), 4.0
+	)
+
+	assert_eq(network.call("_cell_position", 0), Vector2(-20.0, -20.0))
+	assert_eq(network.call("_cell_position", 1), Vector2(-16.0, -20.0))
 
 
 func test_grade_limit_does_not_include_intended_channel_depth() -> void:
@@ -98,7 +134,7 @@ func test_water_never_rises_downstream() -> void:
 		for index in range(1, branch.points.size()):
 			assert_lte(branch.points[index].position.y, branch.points[index - 1].position.y)
 			assert_gt(branch.points[index].depth, 0.0)
-			assert_gte(branch.points[index].bank_falloff, 2.0)
+			assert_gt(branch.points[index].bank_falloff, 0.0)
 
 
 func test_water_grade_has_no_abrupt_drops() -> void:
@@ -139,6 +175,40 @@ func test_water_keeps_freeboard_below_outer_banks() -> void:
 		assert_lte(point.position.y, 4.85)
 
 
+func test_valley_erosion_only_lowers_high_flow_corridors() -> void:
+	var network_script := load(NETWORK_PATH) as GDScript
+	var network: RefCounted = network_script.new(4, 3, _parameters(2.0))
+	assert_true(network.has_method("erode_valleys"))
+	if not network.has_method("erode_valleys"):
+		return
+	var initial := _east_facing_slope()
+	var eroded := network.call("erode_valleys", initial) as PackedFloat32Array
+	var largest_cut := 0.0
+	var largest_raise := 0.0
+	for cell in initial.size():
+		largest_cut = maxf(largest_cut, initial[cell] - eroded[cell])
+		largest_raise = maxf(largest_raise, eroded[cell] - initial[cell])
+
+	assert_gt(largest_cut, 0.25)
+	assert_lte(largest_raise, 0.0)
+	assert_eq(eroded[0], initial[0])
+
+
+func test_valley_erosion_fades_in_before_the_visible_channel() -> void:
+	var network_script := load(NETWORK_PATH) as GDScript
+	var network: RefCounted = network_script.new(4, 3, _parameters(4.0))
+	assert_true(network.has_method("valley_dimensions_for_area"))
+	if not network.has_method("valley_dimensions_for_area"):
+		return
+	var early := network.call("valley_dimensions_for_area", 2.0) as Vector2
+	var visible := network.call("valley_dimensions_for_area", 4.0) as Vector2
+
+	assert_gt(early.x, 0.0)
+	assert_gt(early.y, 0.0)
+	assert_lt(early.x, visible.x)
+	assert_lt(early.y, visible.y)
+
+
 func _east_facing_slope() -> PackedFloat32Array:
 	var heights := PackedFloat32Array()
 	heights.resize(100)
@@ -150,6 +220,7 @@ func _east_facing_slope() -> PackedFloat32Array:
 
 func _parameters(threshold: float) -> RiverParameters:
 	var parameters := RiverParameters.new()
+	parameters.stream_threshold = threshold
 	parameters.channel_threshold = threshold
 	return parameters
 

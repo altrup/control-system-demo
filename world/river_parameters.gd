@@ -1,6 +1,7 @@
 extends Resource
 
-@export_range(1.0, 65536.0, 1.0) var channel_threshold := 4096.0
+@export_range(1.0, 1048576.0, 1.0) var stream_threshold := 4096.0
+@export_range(1.0, 1048576.0, 1.0) var channel_threshold := 65536.0
 @export_range(0.1, 12.0, 0.1) var minimum_width := 3.0
 @export_range(0.1, 12.0, 0.1) var maximum_width := 8.0
 @export_range(0.05, 1.0, 0.05) var width_growth_exponent := 0.45

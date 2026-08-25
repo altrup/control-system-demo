@@ -2,19 +2,19 @@
 
 ## Status
 
-This spec supersedes the generation-domain and base-terrain sections of `2026-08-23-river-generation-redesign.md`. Its river profile, carving, mesh, and selection rules remain valid.
+This spec supersedes the goal, generation-domain, base-terrain, drainage, and ocean sections of `2026-08-23-river-generation-redesign.md`. Its river mesh and crop-selection rules remain valid.
 
 ## Goal
 
-Generate a deterministic 256 by 256 metre playable landscape with broad elevation changes, mountains, drainage valleys, rivers, and possible ocean coastlines. The default seed must contain a river suitable for the bridge-building demo. A coastline is optional for that seed.
+Generate a deterministic 256 by 256 metre playable landscape with broad elevation changes, mountains, drainage valleys, rivers, and possible ocean coastlines. Default seed 22 contains a river suitable for the bridge-building demo. A coastline is optional for that seed.
 
 Generation must use the seed and absolute world coordinates. Increasing the visible area must reveal more terrain without changing existing height, land, or ocean samples.
 
 ## Generation Domain
 
-Generate visible terrain at 0.5 metres per sample over `[-128, 128)` on both horizontal axes. Analyze hydrology at one metre per sample with 128 metres of padding on each side. The hydrology domain is therefore 512 by 512 samples over `[-256, 256)`.
+Generate visible terrain at 0.5 metres per sample over `[-128, 128)` on both horizontal axes. Analyze hydrology at four metres per sample with 896 metres of padding on each side. The hydrology domain is therefore 512 by 512 samples over `[-1024, 1024)`.
 
-The editor full-domain preview renders this complete 512 by 512 metre domain at the same 0.5 metre terrain spacing. Runtime generation always renders the playable crop.
+The editor full-domain preview renders this complete 2048 by 2048 metre domain at two metres per terrain sample. Runtime generation renders the playable crop at 0.5 metres per sample.
 
 ## Base Landforms
 
@@ -29,11 +29,13 @@ Keep transitions continuous near the coast. Do not classify ocean by connectivit
 
 ## Valleys and Rivers
 
-Run drainage once on the initial one-metre height field. Use accumulated flow to apply broad, smooth valley erosion above the river-channel threshold. Erosion strength and width increase gradually with drainage area. Do not raise terrain.
+Run drainage once on the initial four-metre height field. Fade in broad valley erosion before the visible river-channel threshold, then increase its strength and width gradually with drainage area. Do not raise terrain.
 
 Recalculate depression filling, drainage, and accumulation once after valley erosion. Build the canonical river network from this second pass, then crop it using the existing end-to-end selection rules. River carving remains a separate, narrower pass that uses the final shared channel profile.
 
-Ocean water uses the fixed sea level. River water keeps its downstream-varying profile. Stop visible river geometry where it passes under the ocean surface.
+Ocean water uses the fixed sea level and covers final terrain below that level, including submerged river mouths. River water keeps its downstream-varying profile and overlaps the ocean at its mouth.
+
+Visible drainage begins as small streams at 4096 square metres of accumulated area. Width, depth, and valley erosion grow continuously from almost zero toward the reference river profile at 65536 square metres. Do not apply a separate distance-based source taper.
 
 ## Placement
 

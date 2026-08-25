@@ -3,12 +3,13 @@ extends Node3D
 
 const WorldGenerator := preload("res://world/world_generator.gd")
 const RiverMeshBuilder := preload("res://world/river_mesh_builder.gd")
+const OceanMeshBuilder := preload("res://world/ocean_mesh_builder.gd")
 const RiverParameters := preload("res://world/river_parameters.gd")
 const TREE_SCENE := preload("res://world/tree.tscn")
 const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 
 @export_group("World")
-@export var world_seed := 556
+@export var world_seed := WorldGenerator.DEFAULT_SEED
 @export var preview_full_generation_domain := false:
 	set(value):
 		preview_full_generation_domain = value
@@ -16,7 +17,8 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 			_regenerate_preview()
 
 @export_group("River", "river_")
-@export_range(1.0, 65536.0, 1.0, "suffix:m²") var river_channel_threshold := 4096.0
+@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_stream_threshold := 4096.0
+@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_channel_threshold := 65536.0
 @export_range(0.1, 12.0, 0.1, "suffix:m") var river_minimum_width := 3.0
 @export_range(0.1, 12.0, 0.1, "suffix:m") var river_maximum_width := 8.0
 @export_range(0.05, 1.0, 0.05) var river_width_growth_exponent := 0.45
@@ -61,8 +63,9 @@ func _generate_world(full_domain: bool = false) -> void:
 	var generator := WorldGenerator.new(
 		world_seed, _create_river_parameters(), full_domain
 	)
+	_update_ocean(generator)
 	terrain.region_size = Terrain3D.SIZE_64
-	terrain.vertex_spacing = WorldGenerator.TERRAIN_SAMPLE_SPACING
+	terrain.vertex_spacing = generator.terrain_sample_spacing()
 	terrain.material.world_background = Terrain3DMaterial.NONE
 	terrain.material.auto_shader = true
 	terrain.material.set_shader_param("auto_slope", 1.5)
@@ -89,8 +92,41 @@ func _generate_world(full_domain: bool = false) -> void:
 	_update_preview_bounds(generator, full_domain)
 
 
+func _update_ocean(generator: WorldGenerator) -> void:
+	var ocean := get_node_or_null("Ocean") as MeshInstance3D
+	if ocean == null:
+		ocean = MeshInstance3D.new()
+		ocean.name = "Ocean"
+		ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(ocean)
+	ocean.mesh = OceanMeshBuilder.new().build(
+		_create_ocean_mask(generator),
+		generator.terrain_sample_size(),
+		generator.terrain_min(),
+		generator.terrain_sample_spacing(),
+		generator.sea_level()
+	)
+	ocean.material_override = water.material_override
+	ocean.position.y = 0.0
+
+
+func _create_ocean_mask(generator: WorldGenerator) -> PackedByteArray:
+	var sample_size := generator.terrain_sample_size()
+	var mask := PackedByteArray()
+	mask.resize(sample_size * sample_size)
+	for z in sample_size:
+		for x in sample_size:
+			var position := (
+				Vector2(x, z) * generator.terrain_sample_spacing()
+				+ Vector2.ONE * generator.terrain_min()
+			)
+			mask[z * sample_size + x] = 1 if generator.has_ocean_surface_at(position) else 0
+	return mask
+
+
 func _create_river_parameters() -> RiverParameters:
 	var parameters := RiverParameters.new()
+	parameters.stream_threshold = river_stream_threshold
 	parameters.channel_threshold = river_channel_threshold
 	parameters.minimum_width = river_minimum_width
 	parameters.maximum_width = river_maximum_width
@@ -115,7 +151,7 @@ func _create_height_map(generator: WorldGenerator) -> Image:
 	for x in sample_size:
 		for z in sample_size:
 			var position := (
-				Vector2(x, z) * WorldGenerator.TERRAIN_SAMPLE_SPACING
+				Vector2(x, z) * generator.terrain_sample_spacing()
 				+ Vector2.ONE * generator.terrain_min()
 			)
 			image.set_pixel(x, z, Color(generator.height_at(position), 0.0, 0.0, 1.0))
