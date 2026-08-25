@@ -1,6 +1,7 @@
 extends RefCounted
 
 const RiverParameters := preload("res://world/river_parameters.gd")
+const RiverPathRefiner := preload("res://world/river_path_refiner.gd")
 
 class ChannelPoint:
 	extends RefCounted
@@ -34,7 +35,8 @@ const CHANNEL_MINIMUM_DROP := 0.005
 const CHANNEL_MAXIMUM_DROP := 0.04
 const BANK_FREEBOARD := 0.15
 const CURVE_SAMPLE_INTERVAL := 0.5
-const CURVE_MAX_OFFSET := 0.75
+const PATH_REFINEMENT_SPACING := 1.0
+const PATH_REFINEMENT_HALF_WIDTH := 6.0
 const VALLEY_MINIMUM_DEPTH := 0.6
 const VALLEY_MAXIMUM_DEPTH := 4.0
 const VALLEY_MINIMUM_RADIUS := 4.0
@@ -47,6 +49,7 @@ var _grid_size: int
 var _parameters: RiverParameters
 var _output_size: float
 var _sample_spacing: float
+var _path_height_sampler := Callable()
 var _full_domain_output := false
 
 
@@ -54,7 +57,8 @@ func _init(
 	region_size: float,
 	padding: float,
 	parameters: RiverParameters = null,
-	sample_spacing: float = 1.0
+	sample_spacing: float = 1.0,
+	path_height_sampler: Callable = Callable()
 ) -> void:
 	_region_size = region_size
 	_padding = padding
@@ -62,6 +66,7 @@ func _init(
 	_grid_size = roundi((region_size + padding * 2.0) / sample_spacing)
 	_output_size = region_size
 	_parameters = parameters if parameters != null else RiverParameters.new()
+	_path_height_sampler = path_height_sampler
 
 
 func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
@@ -426,36 +431,16 @@ func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
 	if points.size() < 3:
 		return points
 	var source_distances := _point_distances(points)
+	var horizontal := PackedVector2Array()
+	for point in points:
+		horizontal.append(Vector2(point.position.x, point.position.z))
+	if _path_height_sampler.is_valid():
+		horizontal = RiverPathRefiner.new(
+			PATH_REFINEMENT_SPACING, PATH_REFINEMENT_HALF_WIDTH
+		).refine(horizontal, _path_height_sampler)
 	var controls: Array[Vector3] = []
-	# ponytail: Sub-cell bends remove display bias; use D-infinity for continuous topology.
-	var phase := points[0].position.x * 0.31 + points[0].position.z * 0.17
-	for index in points.size():
-		var position := Vector3(points[index].position.x, 0.0, points[index].position.z)
-		if index > 0 and index < points.size() - 1:
-			var previous := points[index - 1].position
-			var following := points[index + 1].position
-			var tangent := Vector2(
-				following.x - previous.x,
-				following.z - previous.z
-			).normalized()
-			var incoming := Vector2(
-				position.x - previous.x,
-				position.z - previous.z
-			).normalized()
-			var outgoing := Vector2(
-				following.x - position.x,
-				following.z - position.z
-			).normalized()
-			var progress := source_distances[index] / source_distances[-1]
-			var bend := clampf(
-				sin(source_distances[index] * 0.3 + phase) * 0.8
-				+ sin(source_distances[index] * 0.53 - phase) * 0.3,
-				-CURVE_MAX_OFFSET,
-				CURVE_MAX_OFFSET
-			) * sin(PI * progress) * smoothstep(0.7, 0.95, incoming.dot(outgoing))
-			position.x -= tangent.y * bend
-			position.z += tangent.x * bend
-		controls.append(position)
+	for position in horizontal:
+		controls.append(Vector3(position.x, 0.0, position.y))
 	controls = _cut_corners(controls)
 	controls = _cut_corners(controls)
 	controls = _cut_corners(controls)
@@ -512,6 +497,10 @@ func _curve_branch(points: Array[ChannelPoint]) -> Array[ChannelPoint]:
 			area,
 			dimensions_for_area(area)
 		))
+	curved[0].position.x = points[0].position.x
+	curved[0].position.z = points[0].position.z
+	curved[-1].position.x = points[-1].position.x
+	curved[-1].position.z = points[-1].position.z
 	return curved
 
 

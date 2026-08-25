@@ -95,6 +95,27 @@ func test_carves_a_half_meter_height_grid_in_world_space() -> void:
 	assert_eq(carved[0], 10.0)
 
 
+func test_sub_grid_channel_lowers_surrounding_height_samples() -> void:
+	var carver: RefCounted = (load(CARVER_PATH) as GDScript).new(4, 0.5)
+	var heights := PackedFloat32Array()
+	heights.resize(64)
+	heights.fill(10.0)
+	var dimensions := Vector3(0.1, 0.02, 0.1)
+	var branch := RiverNetwork.ChannelBranch.new([
+		RiverNetwork.ChannelPoint.new(
+			Vector3(-1.5, 9.0, -0.13), 16.0, dimensions
+		),
+		RiverNetwork.ChannelPoint.new(
+			Vector3(1.5, 9.0, -0.13), 32.0, dimensions
+		),
+	])
+	var branches: Array[RiverNetwork.ChannelBranch] = [branch]
+	var carved := carver.call("carve", heights, branches) as PackedFloat32Array
+
+	assert_lt(carved[3 * 8 + 4], 9.0)
+	assert_lt(carved[4 * 8 + 4], 9.0)
+
+
 func _flat_terrain() -> PackedFloat32Array:
 	var heights := PackedFloat32Array()
 	heights.resize(64)

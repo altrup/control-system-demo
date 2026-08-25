@@ -2,6 +2,7 @@ extends RefCounted
 
 const RiverNetwork := preload("res://world/river_network.gd")
 const FLAT_BED_RATIO := 0.6
+const SUB_GRID_HALF_WIDTH := 0.5
 
 var _region_size: float
 var _sample_spacing: float
@@ -52,10 +53,16 @@ func _carve_section(
 	var length_squared := delta.length_squared()
 	if is_zero_approx(length_squared):
 		return
+	var minimum_half_width := minf(
+		start_point.half_width,
+		end_point.half_width
+	) / _sample_spacing
 	var radius := maxf(
 		start_point.half_width + start_point.bank_falloff,
 		end_point.half_width + end_point.bank_falloff
 	) / _sample_spacing
+	if minimum_half_width < SUB_GRID_HALF_WIDTH:
+		radius += 1.0
 	var minimum := Vector2(
 		maxf(0.0, minf(start.x, end.x) - radius),
 		maxf(0.0, minf(start.y, end.y) - radius)
@@ -78,12 +85,14 @@ func _carve_section(
 				/ _sample_spacing
 			)
 			var distance := position.distance_to(closest)
+			var bed_half_width := half_width * FLAT_BED_RATIO
+			if half_width < SUB_GRID_HALF_WIDTH:
+				distance = maxf(distance - (1.0 - bed_half_width), 0.0)
 			if distance >= half_width + bank_falloff:
 				continue
 			var water_height := lerpf(start_point.position.y, end_point.position.y, progress)
 			var depth := lerpf(start_point.depth, end_point.depth, progress)
 			var bed_height := water_height - depth
-			var bed_half_width := half_width * FLAT_BED_RATIO
 			var cell := z * _grid_size + x
 			var profile_height: float
 			if distance <= bed_half_width:

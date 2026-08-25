@@ -191,7 +191,8 @@ func _generate_landscape() -> void:
 		REGION_SIZE,
 		HYDROLOGY_PADDING,
 		_river_parameters,
-		HYDROLOGY_SAMPLE_SPACING
+		HYDROLOGY_SAMPLE_SPACING,
+		Callable(_terrain_elevation, "height_at")
 	)
 	_valley_heights = network.erode_valleys(raw_heights)
 	_stream_branches = (

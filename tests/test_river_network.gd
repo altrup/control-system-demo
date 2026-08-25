@@ -114,6 +114,29 @@ func test_cell_positions_use_hydrology_sample_spacing() -> void:
 	assert_eq(network.call("_cell_position", 1), Vector2(-16.0, -20.0))
 
 
+func test_curved_channel_uses_fine_terrain_samples() -> void:
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
+		16,
+		12,
+		_parameters(16.0),
+		4.0,
+		Callable(self, "_trough_height")
+	)
+	var dimensions := Vector3(2.0, 0.5, 2.0)
+	var points: Array[RiverNetwork.ChannelPoint] = [
+		RiverNetwork.ChannelPoint.new(Vector3(-4.0, 1.0, 0.0), 16.0, dimensions),
+		RiverNetwork.ChannelPoint.new(Vector3.ZERO, 32.0, dimensions),
+		RiverNetwork.ChannelPoint.new(Vector3(4.0, -1.0, 0.0), 48.0, dimensions),
+	]
+	var curved := network.call("_curve_branch", points) as Array
+	var center = curved[0]
+	for point in curved:
+		if absf(point.position.x) < absf(center.position.x):
+			center = point
+
+	assert_gt(center.position.z, 1.0)
+
+
 func test_grade_limit_does_not_include_intended_channel_depth() -> void:
 	var parameters := _parameters(2.0)
 	parameters.minimum_depth = 3.0
@@ -216,6 +239,10 @@ func _east_facing_slope() -> PackedFloat32Array:
 		for x in 10:
 			heights[z * 10 + x] = 10.0 - x + z * 0.001
 	return heights
+
+
+func _trough_height(position: Vector2) -> float:
+	return absf(position.y - 2.0)
 
 
 func _parameters(threshold: float) -> RiverParameters:
