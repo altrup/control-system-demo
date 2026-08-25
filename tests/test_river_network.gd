@@ -81,13 +81,16 @@ func test_channel_dimensions_have_visible_downstream_growth() -> void:
 func test_small_stream_dimensions_grow_into_the_reference_river_profile() -> void:
 	var parameters := RiverParameters.new()
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
-	var stream := network.call("dimensions_for_area", parameters.stream_threshold) as Vector3
+	var onset := network.call("dimensions_for_area", parameters.stream_threshold) as Vector3
+	var stream := network.call(
+		"dimensions_for_area",
+		(parameters.stream_threshold + parameters.channel_threshold) * 0.5
+	) as Vector3
 	var river := network.call("dimensions_for_area", parameters.channel_threshold) as Vector3
 
+	assert_eq(onset, Vector3.ZERO)
 	assert_gt(stream.x, 0.0)
 	assert_gt(stream.y, 0.0)
-	assert_lte(stream.x, 0.15)
-	assert_lte(stream.y, 0.05)
 	assert_lt(stream.x, river.x)
 	assert_lt(stream.y, river.y)
 

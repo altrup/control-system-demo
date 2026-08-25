@@ -66,7 +66,9 @@ func _append_branch(
 		var tangent := Vector2(following.x - previous.x, following.z - previous.z).normalized()
 		var left_direction := Vector2(-tangent.y, tangent.x)
 		var lateral := Vector3(left_direction.x, 0.0, left_direction.y)
-		var surface_half_width := point.half_width + SHORE_OVERLAP
+		var surface_half_width := point.half_width + minf(
+			SHORE_OVERLAP, point.half_width
+		)
 		var left := point.position + lateral * surface_half_width
 		var right := point.position - lateral * surface_half_width
 		_append_vertex(left, vertices, normals, uvs)

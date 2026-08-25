@@ -67,6 +67,20 @@ func test_clips_a_diagonal_river_without_tapering_its_boundary_mouth() -> void:
 	assert_true(_mesh_covers(Vector2(3.9, 0.0), vertices, indices))
 
 
+func test_water_surface_tapers_to_the_channel_head() -> void:
+	var branches: Array[RiverNetwork.ChannelBranch] = [RiverNetwork.ChannelBranch.new([
+		RiverNetwork.ChannelPoint.new(Vector3.ZERO, 16384.0, Vector3.ZERO),
+		_point(Vector3(4.0, 0.0, 0.0)),
+	])]
+	var mesh := load(BUILDER_PATH).new(8.0).build(branches) as ArrayMesh
+	var arrays := mesh.surface_get_arrays(0)
+	var vertices := arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array
+	var indices := arrays[Mesh.ARRAY_INDEX] as PackedInt32Array
+
+	assert_false(_mesh_covers(Vector2(0.0, 0.5), vertices, indices))
+	assert_true(_mesh_covers(Vector2(3.5, 0.5), vertices, indices))
+
+
 func _point(position: Vector3) -> RiverNetwork.ChannelPoint:
 	return RiverNetwork.ChannelPoint.new(position, 4096.0, Vector3(2.0, 0.5, 2.0))
 

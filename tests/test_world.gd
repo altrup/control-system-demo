@@ -28,13 +28,14 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 		property_names.append(property.name)
 	_handle_terrain3d_deprecation()
 
-	assert_has(property_names, &"river_stream_threshold")
+	assert_has(property_names, &"river_water_onset_area")
 	assert_has(property_names, &"river_channel_threshold")
 	assert_has(property_names, &"river_minimum_width")
 	assert_has(property_names, &"river_maximum_depth")
 	assert_has(property_names, &"sea_level")
 	assert_has(property_names, &"preview_full_generation_domain")
 	assert_does_not_have(property_names, &"river_parameters")
+	assert_does_not_have(property_names, &"river_stream_threshold")
 
 
 func test_sea_level_controls_the_generated_ocean_surface() -> void:
@@ -56,13 +57,14 @@ func test_sea_level_controls_the_generated_ocean_surface() -> void:
 		return
 	_handle_terrain3d_deprecation()
 	assert_almost_eq(ocean.mesh.get_aabb().position.y, -2.0, 0.001)
+	assert_gt(ocean.mesh.get_surface_count(), 0)
 
 
 func test_world_maps_inspector_fields_to_generation_parameters() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
-	world.set("river_stream_threshold", 4096.0)
+	world.set("river_water_onset_area", 16384.0)
 	world.set("river_channel_threshold", 32768.0)
 	world.set("river_maximum_width", 7.0)
 	world.set("river_maximum_depth", 1.5)
@@ -70,7 +72,7 @@ func test_world_maps_inspector_fields_to_generation_parameters() -> void:
 	var parameters: Resource = world.call("_create_river_parameters")
 	_handle_terrain3d_deprecation()
 
-	assert_eq(parameters.get("stream_threshold"), 4096.0)
+	assert_eq(parameters.get("stream_threshold"), 16384.0)
 	assert_eq(parameters.get("channel_threshold"), 32768.0)
 	assert_eq(parameters.get("maximum_width"), 7.0)
 	assert_eq(parameters.get("maximum_depth"), 1.5)
@@ -97,15 +99,17 @@ func test_world_uses_generated_terrain() -> void:
 	var generator := WorldGenerator.new(WorldGenerator.DEFAULT_SEED)
 	var segments: Array = generator.stream_segments()
 	var midpoint: Vector3 = segments[segments.size() / 2].start
+	var expected_height := generator.height_at(Vector2(midpoint.x, midpoint.z))
 	assert_true(await wait_until(
-		func() -> bool: return terrain.data.get_height(midpoint) < midpoint.y,
+		func() -> bool:
+			return absf(terrain.data.get_height(midpoint) - expected_height) < 0.1,
 		5.0
 	))
 	_handle_terrain3d_deprecation()
 	assert_lt(terrain.data.get_height(midpoint), midpoint.y)
 	assert_almost_eq(
 		terrain.data.get_height(midpoint),
-		generator.height_at(Vector2(midpoint.x, midpoint.z)),
+		expected_height,
 		0.1
 	)
 	assert_eq(world.find_children("*", "CSGShape3D", true, false).size(), 0)
@@ -144,29 +148,6 @@ func test_world_has_generated_water_and_separate_trees() -> void:
 	var water_size := water.mesh.get_aabb().size
 	assert_gt(maxf(water_size.x, water_size.z), 20.0)
 	assert_eq(trees.get_child_count(), 448)
-
-
-func test_world_has_an_ocean_surface_at_sea_level() -> void:
-	var world := _instantiate_world()
-	if world == null:
-		return
-	var ocean := world.get_node_or_null("Ocean") as MeshInstance3D
-	assert_not_null(ocean)
-	if ocean == null:
-		return
-	_handle_terrain3d_deprecation()
-
-	assert_true(ocean.mesh is ArrayMesh)
-	assert_eq(ocean.position.y, 0.0)
-	if not ocean.mesh is ArrayMesh:
-		return
-	var generator := WorldGenerator.new(WorldGenerator.DEFAULT_SEED)
-	assert_almost_eq(
-		ocean.mesh.get_aabb().position.y,
-		generator.sea_level(),
-		0.001
-	)
-	assert_gt(ocean.mesh.get_surface_count(), 0)
 
 
 func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:

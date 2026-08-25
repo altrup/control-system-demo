@@ -195,7 +195,7 @@ func dimensions_for_area(area: float) -> Vector3:
 		minimum_depth,
 		maximum_depth
 	)
-	var depth := lerpf(0.02, river_depth, profile_fade)
+	var depth := river_depth * profile_fade
 	var river_width := clampf(
 		minimum_width * pow(ratio, _parameters.width_growth_exponent),
 		minimum_width,
@@ -203,9 +203,9 @@ func dimensions_for_area(area: float) -> Vector3:
 	)
 	var river_bank := clampf(river_depth * 4.0, minimum_bank, maximum_bank)
 	return Vector3(
-		lerpf(0.1, river_width, profile_fade),
+		river_width * profile_fade,
 		depth,
-		lerpf(0.1, river_bank, profile_fade)
+		river_bank * profile_fade
 	)
 
 

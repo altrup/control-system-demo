@@ -18,7 +18,7 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 			_regenerate_preview()
 
 @export_group("River", "river_")
-@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_stream_threshold := 4096.0
+@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_water_onset_area := 16384.0
 @export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_channel_threshold := 65536.0
 @export_range(0.1, 12.0, 0.1, "suffix:m") var river_minimum_width := 3.0
 @export_range(0.1, 12.0, 0.1, "suffix:m") var river_maximum_width := 8.0
@@ -127,7 +127,7 @@ func _create_ocean_mask(generator: WorldGenerator) -> PackedByteArray:
 
 func _create_river_parameters() -> RiverParameters:
 	var parameters := RiverParameters.new()
-	parameters.stream_threshold = river_stream_threshold
+	parameters.stream_threshold = river_water_onset_area
 	parameters.channel_threshold = river_channel_threshold
 	parameters.minimum_width = river_minimum_width
 	parameters.maximum_width = river_maximum_width
