@@ -264,6 +264,22 @@ func test_generated_water_stays_inside_world_bounds() -> void:
 	assert_lte(bounds.end.z, 128.0)
 
 
+func test_editor_save_temporarily_removes_the_generated_water_mesh() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var water := world.get_node("Water") as MeshInstance3D
+	assert_true(await wait_until(func() -> bool: return water.mesh is ArrayMesh, 3.0))
+	var generated_mesh := water.mesh
+
+	world.notification(Node.NOTIFICATION_EDITOR_PRE_SAVE)
+	assert_null(water.mesh)
+
+	world.notification(Node.NOTIFICATION_EDITOR_POST_SAVE)
+	_handle_terrain3d_deprecation()
+	assert_same(water.mesh, generated_mesh)
+
+
 func test_water_mesh_reuses_vertices_inside_each_stream_branch() -> void:
 	var world := _instantiate_world()
 	if world == null:

@@ -39,6 +39,18 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 @onready var trees: Node3D = $Trees
 @onready var player: CharacterBody3D = $Player
 @onready var camera: Camera3D = $Player/Head/Camera3D
+var _editor_preview_water_mesh: Mesh
+
+
+func _notification(what: int) -> void:
+	if not is_node_ready():
+		return
+	if what == NOTIFICATION_EDITOR_PRE_SAVE:
+		_editor_preview_water_mesh = water.mesh
+		water.mesh = null
+	elif what == NOTIFICATION_EDITOR_POST_SAVE:
+		water.mesh = _editor_preview_water_mesh
+		_editor_preview_water_mesh = null
 
 
 func _ready() -> void:
