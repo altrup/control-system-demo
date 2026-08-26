@@ -405,7 +405,9 @@ func _build_branches(
 				break
 			var next := downstream[current]
 			if incoming_count.get(next, 0) != 1:
-				points.append(_make_point(next, water_heights, accumulation))
+				points.append(_make_point(
+					next, water_heights, accumulation, accumulation[current]
+				))
 				break
 			current = next
 		points = _curve_branch(points)
@@ -417,13 +419,15 @@ func _build_branches(
 func _make_point(
 	cell: int,
 	water_heights: Dictionary[int, float],
-	accumulation: PackedFloat32Array
+	accumulation: PackedFloat32Array,
+	area_override: float = -1.0
 ) -> ChannelPoint:
 	var horizontal := _cell_position(cell)
+	var area := accumulation[cell] if area_override < 0.0 else area_override
 	return ChannelPoint.new(
 		Vector3(horizontal.x, water_heights[cell], horizontal.y),
-		accumulation[cell],
-		dimensions_for_area(accumulation[cell])
+		area,
+		dimensions_for_area(area)
 	)
 
 

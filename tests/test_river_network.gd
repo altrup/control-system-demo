@@ -95,6 +95,50 @@ func test_small_stream_dimensions_grow_into_the_reference_river_profile() -> voi
 	assert_lt(stream.y, river.y)
 
 
+func test_incoming_branches_keep_their_own_flow_at_confluence() -> void:
+	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
+		8, 0, _parameters(2.0)
+	)
+	var retained: Dictionary[int, bool] = {17: true, 19: true, 26: true, 34: true}
+	var downstream := PackedInt32Array()
+	downstream.resize(64)
+	downstream.fill(-1)
+	downstream[17] = 26
+	downstream[19] = 26
+	downstream[26] = 34
+	downstream[34] = 42
+	var accumulation := PackedFloat32Array()
+	accumulation.resize(64)
+	accumulation.fill(1.0)
+	accumulation[17] = 2.0
+	accumulation[19] = 4.0
+	accumulation[26] = 100.0
+	accumulation[34] = 110.0
+	accumulation[42] = 120.0
+	var water_heights: Dictionary[int, float] = {
+		17: 5.0, 19: 5.0, 26: 4.0, 34: 3.0, 42: 2.0,
+	}
+	var branches := network.call(
+		"_build_branches", retained, water_heights, downstream, accumulation
+	) as Array
+	var confluence := Vector3(-2.0, 4.0, -1.0)
+	var incoming: Array = []
+	var outgoing = null
+	for branch in branches:
+		if branch.points[-1].position.is_equal_approx(confluence):
+			incoming.append(branch)
+		if branch.points[0].position.is_equal_approx(confluence):
+			outgoing = branch
+
+	assert_eq(incoming.size(), 2)
+	assert_not_null(outgoing)
+	if outgoing == null:
+		return
+	for branch in incoming:
+		assert_eq(branch.points[-1].accumulated_area, branch.points[0].accumulated_area)
+		assert_lt(branch.points[-1].half_width, outgoing.points[0].half_width)
+
+
 func test_flow_accumulation_uses_physical_cell_area() -> void:
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(
 		16, 12, _parameters(16.0), 4.0
