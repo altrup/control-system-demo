@@ -22,6 +22,30 @@ func test_seed_repeats_generated_world() -> void:
 	assert_ne(first.call("tree_positions"), changed.call("tree_positions"))
 
 
+func test_crop_offset_selects_a_different_area_without_moving_local_terrain() -> void:
+	var generator_script := load(GENERATOR_PATH) as GDScript
+	var centered: RefCounted = generator_script.new(generator_script.DEFAULT_SEED)
+	var shifted: RefCounted = generator_script.new(
+		generator_script.DEFAULT_SEED,
+		null,
+		false,
+		generator_script.DEFAULT_SEA_LEVEL,
+		generator_script.DEFAULT_GLOBAL_RELIEF,
+		Vector2(256.0, -128.0)
+	)
+
+	assert_eq(shifted.call("terrain_min"), -128.0)
+	assert_ne(
+		shifted.call("height_at", Vector2.ZERO),
+		centered.call("height_at", Vector2.ZERO)
+	)
+	var spawn := shifted.call("player_spawn") as Vector2
+	assert_gte(spawn.x, -128.0)
+	assert_lt(spawn.x, 128.0)
+	assert_gte(spawn.y, -128.0)
+	assert_lt(spawn.y, 128.0)
+
+
 func test_terrain_has_large_scale_relief() -> void:
 	var generator_script := load(GENERATOR_PATH) as GDScript
 	var generator: RefCounted = generator_script.new(481516)

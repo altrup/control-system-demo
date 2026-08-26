@@ -12,6 +12,8 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 @export var world_seed := WorldGenerator.DEFAULT_SEED
 @export_range(-20.0, 10.0, 0.5, "suffix:m") var sea_level := WorldGenerator.DEFAULT_SEA_LEVEL
 @export_range(0.0, 400.0, 1.0, "suffix:m") var global_relief := WorldGenerator.DEFAULT_GLOBAL_RELIEF
+@export_range(-896.0, 896.0, 4.0, "suffix:m") var crop_offset_x := 0.0
+@export_range(-896.0, 896.0, 4.0, "suffix:m") var crop_offset_z := 0.0
 @export var preview_full_generation_domain := false:
 	set(value):
 		preview_full_generation_domain = value
@@ -61,7 +63,12 @@ func _configure_terrain_storage() -> void:
 func _generate_world(full_domain: bool = false) -> void:
 	water.mesh = null
 	var generator := WorldGenerator.new(
-		world_seed, _create_river_parameters(), full_domain, sea_level, global_relief
+		world_seed,
+		_create_river_parameters(),
+		full_domain,
+		sea_level,
+		global_relief,
+		Vector2(crop_offset_x, crop_offset_z)
 	)
 	_update_ocean(generator)
 	terrain.region_size = Terrain3D.SIZE_64
@@ -172,32 +179,35 @@ func _update_preview_bounds(generator: WorldGenerator, full_domain: bool) -> voi
 	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES, material)
+	var crop_offset := Vector2(crop_offset_x, crop_offset_z)
+	var crop_min := crop_offset + Vector2.ONE * WorldGenerator.WORLD_MIN
+	var crop_max := crop_offset + Vector2.ONE * WorldGenerator.WORLD_MAX
 	for offset in WorldGenerator.REGION_SIZE:
-		var start := WorldGenerator.WORLD_MIN + offset
-		var end := start + 1.0
+		var x_start := crop_min.x + offset
+		var z_start := crop_min.y + offset
 		_add_preview_line(
 			mesh,
 			generator,
-			Vector2(start, WorldGenerator.WORLD_MIN),
-			Vector2(end, WorldGenerator.WORLD_MIN)
+			Vector2(x_start, crop_min.y),
+			Vector2(x_start + 1.0, crop_min.y)
 		)
 		_add_preview_line(
 			mesh,
 			generator,
-			Vector2(start, WorldGenerator.WORLD_MAX),
-			Vector2(end, WorldGenerator.WORLD_MAX)
+			Vector2(x_start, crop_max.y),
+			Vector2(x_start + 1.0, crop_max.y)
 		)
 		_add_preview_line(
 			mesh,
 			generator,
-			Vector2(WorldGenerator.WORLD_MIN, start),
-			Vector2(WorldGenerator.WORLD_MIN, end)
+			Vector2(crop_min.x, z_start),
+			Vector2(crop_min.x, z_start + 1.0)
 		)
 		_add_preview_line(
 			mesh,
 			generator,
-			Vector2(WorldGenerator.WORLD_MAX, start),
-			Vector2(WorldGenerator.WORLD_MAX, end)
+			Vector2(crop_max.x, z_start),
+			Vector2(crop_max.x, z_start + 1.0)
 		)
 	mesh.surface_end()
 	bounds.mesh = mesh

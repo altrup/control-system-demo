@@ -51,6 +51,7 @@ var _output_size: float
 var _sample_spacing: float
 var _path_height_sampler := Callable()
 var _full_domain_output := false
+var _crop_center: Vector2
 
 
 func _init(
@@ -58,7 +59,8 @@ func _init(
 	padding: float,
 	parameters: RiverParameters = null,
 	sample_spacing: float = 1.0,
-	path_height_sampler: Callable = Callable()
+	path_height_sampler: Callable = Callable(),
+	crop_center: Vector2 = Vector2.ZERO
 ) -> void:
 	_region_size = region_size
 	_padding = padding
@@ -67,6 +69,7 @@ func _init(
 	_output_size = region_size
 	_parameters = parameters if parameters != null else RiverParameters.new()
 	_path_height_sampler = path_height_sampler
+	_crop_center = crop_center
 
 
 func build(base_heights: PackedFloat32Array) -> Array[ChannelBranch]:
@@ -311,7 +314,12 @@ func _crop_crossing_branches(
 		var point_range := retained_ranges[branch_index]
 		var points: Array[ChannelPoint] = []
 		for point_index in range(point_range.x, point_range.y + 1):
-			points.append(branches[branch_index].points[point_index])
+			var point := branches[branch_index].points[point_index]
+			points.append(ChannelPoint.new(
+				point.position - Vector3(_crop_center.x, 0.0, _crop_center.y),
+				point.accumulated_area,
+				Vector3(point.half_width * 2.0, point.depth, point.bank_falloff)
+			))
 		_extend_boundary_endpoints(points)
 		cropped.append(ChannelBranch.new(points))
 	return cropped
@@ -362,13 +370,13 @@ func _merge_ranges(
 
 
 func _is_playable_position(position: Vector3) -> bool:
-	var world_min := _region_size * -0.5
-	var world_max := world_min + _region_size
+	var world_min := _crop_center - Vector2.ONE * (_region_size * 0.5)
+	var world_max := world_min + Vector2.ONE * _region_size
 	return (
-		position.x >= world_min
-		and position.z >= world_min
-		and position.x < world_max
-		and position.z < world_max
+		position.x >= world_min.x
+		and position.z >= world_min.y
+		and position.x < world_max.x
+		and position.z < world_max.y
 	)
 
 

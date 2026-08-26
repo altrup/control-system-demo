@@ -59,6 +59,7 @@ const PLAYER_SPAWN_CLEARANCE := 6.0
 var _terrain_elevation: TerrainElevation
 var _world_seed: int
 var _sea_level: float
+var _crop_offset: Vector2
 var _river_parameters: RiverParameters
 var _full_domain: bool
 var _terrain_size: int
@@ -77,11 +78,16 @@ func _init(
 	river_parameters: RiverParameters = null,
 	full_domain: bool = false,
 	sea_level: float = DEFAULT_SEA_LEVEL,
-	global_relief: float = DEFAULT_GLOBAL_RELIEF
+	global_relief: float = DEFAULT_GLOBAL_RELIEF,
+	crop_offset: Vector2 = Vector2.ZERO
 ) -> void:
 	_world_seed = world_seed
 	_sea_level = sea_level
 	_full_domain = full_domain
+	_crop_offset = crop_offset.clamp(
+		Vector2.ONE * -HYDROLOGY_PADDING,
+		Vector2.ONE * HYDROLOGY_PADDING
+	)
 	_terrain_size = FULL_DOMAIN_SIZE if full_domain else REGION_SIZE
 	_terrain_min = FULL_DOMAIN_MIN if full_domain else WORLD_MIN
 	_terrain_sample_size = (
@@ -99,13 +105,13 @@ func _init(
 
 func height_at(position: Vector2) -> float:
 	if position.x < _terrain_min or position.y < _terrain_min:
-		return _base_height_at(position)
+		return _terrain_elevation.height_at(_source_position(position))
 	var terrain_max := _terrain_min + _terrain_size
 	if (
 		position.x > terrain_max - _terrain_sample_spacing
 		or position.y > terrain_max - _terrain_sample_spacing
 	):
-		return _base_height_at(position)
+		return _terrain_elevation.height_at(_source_position(position))
 
 	var grid_position := (
 		(position - Vector2.ONE * _terrain_min) / _terrain_sample_spacing
@@ -167,7 +173,7 @@ func tree_positions() -> Array[Vector2]:
 
 
 func is_ocean(position: Vector2) -> bool:
-	return _terrain_elevation.is_ocean(position)
+	return _terrain_elevation.is_ocean(_source_position(position))
 
 
 func has_ocean_surface_at(position: Vector2) -> bool:
@@ -198,7 +204,8 @@ func _generate_landscape() -> void:
 		HYDROLOGY_PADDING,
 		_river_parameters,
 		HYDROLOGY_SAMPLE_SPACING,
-		Callable(_terrain_elevation, "height_at")
+		Callable(_terrain_elevation, "height_at"),
+		_crop_offset
 	)
 	_valley_heights = network.erode_valleys(raw_heights)
 	_stream_branches = (
@@ -238,11 +245,13 @@ func _build_terrain() -> void:
 	_terrain_heights.resize(_terrain_sample_size * _terrain_sample_size)
 	for z in _terrain_sample_size:
 		for x in _terrain_sample_size:
-			var position := (
+			var local_position := (
 				Vector2(x, z) * _terrain_sample_spacing
 				+ Vector2.ONE * _terrain_min
 			)
-			_terrain_heights[z * _terrain_sample_size + x] = _valley_height_at(position)
+			_terrain_heights[z * _terrain_sample_size + x] = _valley_height_at(
+				_source_position(local_position)
+			)
 	_terrain_heights = RiverCarver.new(
 		_terrain_size, _terrain_sample_spacing
 	).carve(_terrain_heights, _stream_branches)
@@ -367,3 +376,7 @@ func _is_inside_world(position: Vector2, margin: float = 0.0) -> bool:
 		and position.x <= WORLD_MAX - 1.0 - margin
 		and position.y <= WORLD_MAX - 1.0 - margin
 	)
+
+
+func _source_position(local_position: Vector2) -> Vector2:
+	return local_position if _full_domain else local_position + _crop_offset

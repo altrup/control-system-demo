@@ -36,6 +36,8 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 	assert_has(property_names, &"river_bank_falloff_ratio")
 	assert_has(property_names, &"sea_level")
 	assert_has(property_names, &"global_relief")
+	assert_has(property_names, &"crop_offset_x")
+	assert_has(property_names, &"crop_offset_z")
 	assert_has(property_names, &"preview_full_generation_domain")
 	assert_does_not_have(property_names, &"river_parameters")
 	assert_does_not_have(property_names, &"river_stream_threshold")
@@ -186,6 +188,8 @@ func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
 		fail_test("The world exposes the full-domain preview toggle")
 		return
 
+	world.set("crop_offset_x", 64.0)
+	world.set("crop_offset_z", -32.0)
 	await world.call("_generate_world", true)
 	var terrain := world.get_node("Terrain3D") as Terrain3D
 	var water := world.get_node("Water") as MeshInstance3D
@@ -201,6 +205,11 @@ func test_full_preview_shows_the_hydrology_domain_without_trees() -> void:
 	if preview_bounds == null:
 		return
 	assert_true(preview_bounds.visible)
+	var preview_aabb := preview_bounds.mesh.get_aabb()
+	assert_almost_eq(preview_aabb.position.x, -64.0, 0.001)
+	assert_almost_eq(preview_aabb.position.z, -160.0, 0.001)
+	assert_almost_eq(preview_aabb.end.x, 192.0, 0.001)
+	assert_almost_eq(preview_aabb.end.z, 96.0, 0.001)
 
 	await world.call("_generate_world", false)
 	_handle_terrain3d_deprecation()
