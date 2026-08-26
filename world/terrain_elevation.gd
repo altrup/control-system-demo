@@ -1,6 +1,7 @@
 extends RefCounted
 
 const DEFAULT_SEA_LEVEL := -2.0
+const DEFAULT_GLOBAL_RELIEF := 200.0
 const COAST_THRESHOLD := -0.18
 const COORDINATE_OFFSET := Vector2(4096.0, 4096.0)
 
@@ -10,10 +11,16 @@ var _mountain_noise := FastNoiseLite.new()
 var _hill_noise := FastNoiseLite.new()
 var _detail_noise := FastNoiseLite.new()
 var _sea_level: float
+var _global_relief: float
 
 
-func _init(world_seed: int, sea_level: float = DEFAULT_SEA_LEVEL) -> void:
+func _init(
+	world_seed: int,
+	sea_level: float = DEFAULT_SEA_LEVEL,
+	global_relief: float = DEFAULT_GLOBAL_RELIEF
+) -> void:
 	_sea_level = sea_level
+	_global_relief = global_relief
 	_configure_noise(_continental_noise, world_seed, 0.0004, 3)
 	_configure_noise(_macro_noise, world_seed + 1, 0.000875, 4)
 	_configure_noise(_mountain_noise, world_seed + 2, 0.00175, 5)
@@ -34,8 +41,8 @@ func height_at(position: Vector2) -> float:
 	var ridges := maxf(_mountain_noise.get_noise_2dv(noise_position), 0.0)
 	return (
 		coast_distance * 24.0
-		+ macro * 10.0 * land_mask
-		+ pow(ridges, 1.35) * 42.0 * highland_mask
+		+ macro * _global_relief * 0.25 * land_mask
+		+ pow(ridges, 1.35) * _global_relief * highland_mask
 		+ _hill_noise.get_noise_2dv(noise_position) * 5.0 * land_mask
 		+ _detail_noise.get_noise_2dv(noise_position) * 1.2 * land_mask
 	)

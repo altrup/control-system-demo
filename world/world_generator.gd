@@ -5,8 +5,9 @@ const RiverCarver := preload("res://world/river_carver.gd")
 const RiverParameters := preload("res://world/river_parameters.gd")
 const TerrainElevation := preload("res://world/terrain_elevation.gd")
 
-const DEFAULT_SEED := 22
+const DEFAULT_SEED := 149
 const DEFAULT_SEA_LEVEL := TerrainElevation.DEFAULT_SEA_LEVEL
+const DEFAULT_GLOBAL_RELIEF := TerrainElevation.DEFAULT_GLOBAL_RELIEF
 
 
 class StreamSegment:
@@ -75,7 +76,8 @@ func _init(
 	world_seed: int,
 	river_parameters: RiverParameters = null,
 	full_domain: bool = false,
-	sea_level: float = DEFAULT_SEA_LEVEL
+	sea_level: float = DEFAULT_SEA_LEVEL,
+	global_relief: float = DEFAULT_GLOBAL_RELIEF
 ) -> void:
 	_world_seed = world_seed
 	_sea_level = sea_level
@@ -91,7 +93,7 @@ func _init(
 	_river_parameters = (
 		river_parameters if river_parameters != null else RiverParameters.new()
 	)
-	_terrain_elevation = TerrainElevation.new(world_seed, sea_level)
+	_terrain_elevation = TerrainElevation.new(world_seed, sea_level, global_relief)
 	_generate_landscape()
 
 

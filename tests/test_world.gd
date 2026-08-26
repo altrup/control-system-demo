@@ -33,6 +33,7 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 	assert_has(property_names, &"river_minimum_width")
 	assert_has(property_names, &"river_maximum_depth")
 	assert_has(property_names, &"sea_level")
+	assert_has(property_names, &"global_relief")
 	assert_has(property_names, &"preview_full_generation_domain")
 	assert_does_not_have(property_names, &"river_parameters")
 	assert_does_not_have(property_names, &"river_stream_threshold")
@@ -58,6 +59,25 @@ func test_sea_level_controls_the_generated_ocean_surface() -> void:
 	_handle_terrain3d_deprecation()
 	assert_almost_eq(ocean.mesh.get_aabb().position.y, -2.0, 0.001)
 	assert_gt(ocean.mesh.get_surface_count(), 0)
+
+
+func test_global_relief_controls_generated_terrain() -> void:
+	var world := _instantiate_world()
+	if world == null:
+		return
+	var terrain := world.get_node("Terrain3D") as Terrain3D
+	var trees := world.get_node("Trees") as Node3D
+	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 448, 5.0))
+
+	world.set("global_relief", 40.0)
+	await world.call("_generate_world")
+	var low_relief_range := _terrain_height_range(terrain)
+	world.set("global_relief", 200.0)
+	await world.call("_generate_world")
+	var high_relief_range := _terrain_height_range(terrain)
+	_handle_terrain3d_deprecation()
+
+	assert_gt(high_relief_range, low_relief_range * 1.5)
 
 
 func test_world_maps_inspector_fields_to_generation_parameters() -> void:
@@ -281,6 +301,17 @@ func _instantiate_world() -> Node3D:
 
 	var world_scene := load(WORLD_SCENE_PATH) as PackedScene
 	return add_child_autofree(world_scene.instantiate()) as Node3D
+
+
+func _terrain_height_range(terrain: Terrain3D) -> float:
+	var lowest := INF
+	var highest := -INF
+	for x in range(-128, 128, 8):
+		for z in range(-128, 128, 8):
+			var height := terrain.data.get_height(Vector3(x, 0.0, z))
+			lowest = minf(lowest, height)
+			highest = maxf(highest, height)
+	return highest - lowest
 
 
 func _handle_terrain3d_deprecation() -> void:
