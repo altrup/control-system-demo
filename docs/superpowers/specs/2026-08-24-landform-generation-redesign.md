@@ -4,9 +4,27 @@
 
 This spec supersedes the goal, generation-domain, base-terrain, drainage, and ocean sections of `2026-08-23-river-generation-redesign.md`. Its river mesh and crop-selection rules remain valid.
 
+## Implemented Baseline
+
+As of 2026-08-25, the generated world uses default seed 149, sea level -2 metres, and global relief 200 metres. The playable area is a 256 by 256 metre crop of the fixed 2048 by 2048 metre generation domain. Visible terrain uses 0.5 metre samples, hydrology uses 4 metre cells, and the full-domain preview uses 2 metre terrain samples.
+
+The Inspector exposes crop offsets on the world X and Z axes in 4 metre steps. These offsets select a different part of the same generated domain while the playable terrain remains centered on the local origin. The full-domain preview moves the crop outline to show the selected source area.
+
+River dimensions use an unclamped flow profile. Effective flow is accumulated drainage area multiplied by the discharge scale. The defaults are:
+
+- Minimum visible flow: 16384.
+- Reference flow: 65536.
+- Discharge scale: 2.0.
+- Reference width: 3.0 metres with exponent 0.45.
+- Reference depth: 0.8 metres with exponent 0.35.
+- Bank falloff: four times the calculated depth.
+- Maximum centerline correction: 2.0 metres.
+
+Width, depth, and bank falloff have no hard geometry limits. Tributaries keep their incoming flow profile at confluences. Water remains a static visual surface without swimming, buoyancy, or flow physics. The full automated suite passes 74 tests at this baseline.
+
 ## Goal
 
-Generate a deterministic 256 by 256 metre playable landscape with broad elevation changes, mountains, drainage valleys, rivers, and possible ocean coastlines. Default seed 22 contains a river suitable for the bridge-building demo. A coastline is optional for that seed.
+Generate a deterministic 256 by 256 metre playable landscape with broad elevation changes, mountains, drainage valleys, rivers, and possible ocean coastlines. Default seed 149 contains a river suitable for the bridge-building demo. A coastline is optional for that seed.
 
 Generation must use the seed and absolute world coordinates. Increasing the visible area must reveal more terrain without changing existing height, land, or ocean samples.
 
@@ -35,7 +53,7 @@ Recalculate depression filling, drainage, and accumulation once after valley ero
 
 Ocean water uses the fixed sea level and covers final terrain below that level, including submerged river mouths. River water keeps its downstream-varying profile and overlaps the ocean at its mouth.
 
-Visible drainage begins as small streams at 4096 square metres of accumulated area. Width, depth, and valley erosion grow continuously from almost zero toward the reference river profile at 65536 square metres. Do not apply a separate distance-based source taper.
+Visible drainage begins when effective flow reaches 16384. Effective flow is accumulated drainage area multiplied by the discharge scale. Width, depth, and valley erosion grow continuously from almost zero toward the reference river profile at an effective flow of 65536. Do not apply a separate distance-based source taper or hard width and depth limits.
 
 ## Placement
 
