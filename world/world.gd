@@ -19,16 +19,14 @@ const TERRAIN_DATA_DIRECTORY := "res://.godot/terrain_data"
 			_regenerate_preview()
 
 @export_group("River", "river_")
-@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_water_onset_area := 16384.0
-@export_range(1.0, 1048576.0, 1.0, "suffix:m²") var river_channel_threshold := 65536.0
-@export_range(0.1, 12.0, 0.1, "suffix:m") var river_minimum_width := 3.0
-@export_range(0.1, 12.0, 0.1, "suffix:m") var river_maximum_width := 8.0
+@export_range(1.0, 1048576.0, 1.0, "or_greater") var river_minimum_visible_flow := 16384.0
+@export_range(1.0, 1048576.0, 1.0, "or_greater") var river_reference_flow := 65536.0
+@export_range(0.1, 4.0, 0.1, "or_greater") var river_discharge_scale := 2.0
+@export_range(0.1, 12.0, 0.1, "or_greater", "suffix:m") var river_reference_width := 3.0
 @export_range(0.05, 1.0, 0.05) var river_width_growth_exponent := 0.45
-@export_range(0.1, 4.0, 0.1, "suffix:m") var river_minimum_depth := 0.8
-@export_range(0.1, 4.0, 0.1, "suffix:m") var river_maximum_depth := 1.8
+@export_range(0.1, 4.0, 0.1, "or_greater", "suffix:m") var river_reference_depth := 0.8
 @export_range(0.05, 1.0, 0.05) var river_depth_growth_exponent := 0.35
-@export_range(0.1, 10.0, 0.1, "suffix:m") var river_minimum_bank_falloff := 2.0
-@export_range(0.1, 10.0, 0.1, "suffix:m") var river_maximum_bank_falloff := 4.8
+@export_range(0.1, 10.0, 0.1, "or_greater") var river_bank_falloff_ratio := 4.0
 @export_range(0.1, 10.0, 0.1, "suffix:m") var river_maximum_centerline_cut := 2.0
 
 @export_group("")
@@ -128,16 +126,14 @@ func _create_ocean_mask(generator: WorldGenerator) -> PackedByteArray:
 
 func _create_river_parameters() -> RiverParameters:
 	var parameters := RiverParameters.new()
-	parameters.stream_threshold = river_water_onset_area
-	parameters.channel_threshold = river_channel_threshold
-	parameters.minimum_width = river_minimum_width
-	parameters.maximum_width = river_maximum_width
+	parameters.minimum_visible_flow = river_minimum_visible_flow
+	parameters.reference_flow = river_reference_flow
+	parameters.discharge_scale = river_discharge_scale
+	parameters.reference_width = river_reference_width
 	parameters.width_growth_exponent = river_width_growth_exponent
-	parameters.minimum_depth = river_minimum_depth
-	parameters.maximum_depth = river_maximum_depth
+	parameters.reference_depth = river_reference_depth
 	parameters.depth_growth_exponent = river_depth_growth_exponent
-	parameters.minimum_bank_falloff = river_minimum_bank_falloff
-	parameters.maximum_bank_falloff = river_maximum_bank_falloff
+	parameters.bank_falloff_ratio = river_bank_falloff_ratio
 	parameters.maximum_centerline_cut = river_maximum_centerline_cut
 	return parameters
 

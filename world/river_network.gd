@@ -96,14 +96,15 @@ func erode_valleys(base_heights: PackedFloat32Array) -> PackedFloat32Array:
 
 
 func valley_dimensions_for_area(area: float) -> Vector2:
-	var onset_area := _parameters.stream_threshold * VALLEY_ONSET_STREAM_RATIO
-	if area <= onset_area:
+	var flow := area * _parameters.discharge_scale
+	var onset_flow := _parameters.minimum_visible_flow * VALLEY_ONSET_STREAM_RATIO
+	if flow <= onset_flow:
 		return Vector2.ZERO
-	var ratio := area / _parameters.channel_threshold
+	var ratio := flow / _parameters.reference_flow
 	var fade := smoothstep(
-		onset_area,
-		_parameters.channel_threshold,
-		minf(area, _parameters.channel_threshold)
+		onset_flow,
+		_parameters.reference_flow,
+		minf(flow, _parameters.reference_flow)
 	)
 	var scale := pow(maxf(ratio, 1.0), 0.3)
 	return Vector2(
@@ -170,42 +171,26 @@ func _build(
 
 
 func dimensions_for_area(area: float) -> Vector3:
-	var ratio := maxf(area / _parameters.channel_threshold, 0.0001)
+	var flow := area * _parameters.discharge_scale
+	var ratio := maxf(flow / _parameters.reference_flow, 0.0001)
 	var profile_fade := 1.0
-	if _parameters.stream_threshold < _parameters.channel_threshold:
+	if _parameters.minimum_visible_flow < _parameters.reference_flow:
 		profile_fade = smoothstep(
-			_parameters.stream_threshold / _parameters.channel_threshold,
+			_parameters.minimum_visible_flow / _parameters.reference_flow,
 			1.0,
 			minf(ratio, 1.0)
 		)
-	var minimum_width := minf(_parameters.minimum_width, _parameters.maximum_width)
-	var maximum_width := maxf(_parameters.minimum_width, _parameters.maximum_width)
-	var minimum_depth := minf(_parameters.minimum_depth, _parameters.maximum_depth)
-	var maximum_depth := maxf(_parameters.minimum_depth, _parameters.maximum_depth)
-	var minimum_bank := minf(
-		_parameters.minimum_bank_falloff,
-		_parameters.maximum_bank_falloff
-	)
-	var maximum_bank := maxf(
-		_parameters.minimum_bank_falloff,
-		_parameters.maximum_bank_falloff
-	)
-	var river_depth := clampf(
-		minimum_depth * pow(ratio, _parameters.depth_growth_exponent),
-		minimum_depth,
-		maximum_depth
+	var river_depth := _parameters.reference_depth * pow(
+		ratio, _parameters.depth_growth_exponent
 	)
 	var depth := river_depth * profile_fade
-	var river_width := clampf(
-		minimum_width * pow(ratio, _parameters.width_growth_exponent),
-		minimum_width,
-		maximum_width
+	var river_width := _parameters.reference_width * pow(
+		ratio, _parameters.width_growth_exponent
 	)
-	var river_bank := clampf(river_depth * 4.0, minimum_bank, maximum_bank)
 	return Vector3(
 		river_width * profile_fade,
 		depth,
-		river_bank * profile_fade
+		river_depth * _parameters.bank_falloff_ratio * profile_fade
 	)
 
 
@@ -219,12 +204,17 @@ func _retain_full_domain(
 	var incoming_count: Dictionary[int, int] = {}
 	for cell in downstream.size():
 		var next := downstream[cell]
-		if next >= 0 and accumulation[cell] >= _parameters.stream_threshold:
+		if (
+			next >= 0
+			and accumulation[cell] * _parameters.discharge_scale
+			>= _parameters.minimum_visible_flow
+		):
 			incoming_count[next] = incoming_count.get(next, 0) + 1
 	for cell in downstream.size():
 		if (
 			downstream[cell] >= 0
-			and accumulation[cell] >= _parameters.stream_threshold
+			and accumulation[cell] * _parameters.discharge_scale
+			>= _parameters.minimum_visible_flow
 			and incoming_count.get(cell, 0) == 0
 		):
 			_retain_domain_path(

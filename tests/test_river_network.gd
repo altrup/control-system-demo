@@ -62,13 +62,27 @@ func test_channel_dimensions_grow_with_accumulated_area() -> void:
 
 	assert_gt(large.x, small.x)
 	assert_gt(large.y, small.y)
-	assert_lte(large.x, 8.0)
-	assert_lte(large.y, 1.8)
+	assert_gt(large.x, 8.0)
+	assert_gt(large.y, 1.8)
+
+
+func test_discharge_scale_increases_channel_dimensions() -> void:
+	var parameters := RiverParameters.new()
+	parameters.discharge_scale = 1.0
+	var normal: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
+	var normal_dimensions := normal.call("dimensions_for_area", 65536.0) as Vector3
+	parameters.discharge_scale = 2.0
+	var increased: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
+	var increased_dimensions := increased.call("dimensions_for_area", 65536.0) as Vector3
+
+	assert_gt(increased_dimensions.x, normal_dimensions.x)
+	assert_gt(increased_dimensions.y, normal_dimensions.y)
 
 
 func test_channel_dimensions_have_visible_downstream_growth() -> void:
 	var parameters := RiverParameters.new()
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
+	parameters.discharge_scale = 1.0
 	var headwater := network.call("dimensions_for_area", 65536.0) as Vector3
 	var downstream := network.call("dimensions_for_area", 262144.0) as Vector3
 
@@ -81,12 +95,13 @@ func test_channel_dimensions_have_visible_downstream_growth() -> void:
 func test_small_stream_dimensions_grow_into_the_reference_river_profile() -> void:
 	var parameters := RiverParameters.new()
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 2, parameters)
-	var onset := network.call("dimensions_for_area", parameters.stream_threshold) as Vector3
+	parameters.discharge_scale = 1.0
+	var onset := network.call("dimensions_for_area", parameters.minimum_visible_flow) as Vector3
 	var stream := network.call(
 		"dimensions_for_area",
-		(parameters.stream_threshold + parameters.channel_threshold) * 0.5
+		(parameters.minimum_visible_flow + parameters.reference_flow) * 0.5
 	) as Vector3
-	var river := network.call("dimensions_for_area", parameters.channel_threshold) as Vector3
+	var river := network.call("dimensions_for_area", parameters.reference_flow) as Vector3
 
 	assert_eq(onset, Vector3.ZERO)
 	assert_gt(stream.x, 0.0)
@@ -186,8 +201,7 @@ func test_curved_channel_uses_fine_terrain_samples() -> void:
 
 func test_grade_limit_does_not_include_intended_channel_depth() -> void:
 	var parameters := _parameters(2.0)
-	parameters.minimum_depth = 3.0
-	parameters.maximum_depth = 3.0
+	parameters.reference_depth = 3.0
 	parameters.maximum_centerline_cut = 0.1
 	var network: RefCounted = (load(NETWORK_PATH) as GDScript).new(4, 3, parameters)
 	var branches: Array = network.call("build", _east_facing_slope())
@@ -294,8 +308,9 @@ func _trough_height(position: Vector2) -> float:
 
 func _parameters(threshold: float) -> RiverParameters:
 	var parameters := RiverParameters.new()
-	parameters.stream_threshold = threshold
-	parameters.channel_threshold = threshold
+	parameters.minimum_visible_flow = threshold
+	parameters.reference_flow = threshold
+	parameters.discharge_scale = 1.0
 	return parameters
 
 

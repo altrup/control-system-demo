@@ -28,10 +28,12 @@ func test_world_exposes_river_tuning_as_normal_inspector_fields() -> void:
 		property_names.append(property.name)
 	_handle_terrain3d_deprecation()
 
-	assert_has(property_names, &"river_water_onset_area")
-	assert_has(property_names, &"river_channel_threshold")
-	assert_has(property_names, &"river_minimum_width")
-	assert_has(property_names, &"river_maximum_depth")
+	assert_has(property_names, &"river_minimum_visible_flow")
+	assert_has(property_names, &"river_reference_flow")
+	assert_has(property_names, &"river_discharge_scale")
+	assert_has(property_names, &"river_reference_width")
+	assert_has(property_names, &"river_reference_depth")
+	assert_has(property_names, &"river_bank_falloff_ratio")
 	assert_has(property_names, &"sea_level")
 	assert_has(property_names, &"global_relief")
 	assert_has(property_names, &"preview_full_generation_domain")
@@ -69,6 +71,7 @@ func test_global_relief_controls_generated_terrain() -> void:
 	var trees := world.get_node("Trees") as Node3D
 	assert_true(await wait_until(func() -> bool: return trees.get_child_count() == 448, 5.0))
 
+	world.set("river_discharge_scale", 1.0)
 	world.set("global_relief", 40.0)
 	await world.call("_generate_world")
 	var low_relief_range := _terrain_height_range(terrain)
@@ -84,18 +87,20 @@ func test_world_maps_inspector_fields_to_generation_parameters() -> void:
 	var world := _instantiate_world()
 	if world == null:
 		return
-	world.set("river_water_onset_area", 16384.0)
-	world.set("river_channel_threshold", 32768.0)
-	world.set("river_maximum_width", 7.0)
-	world.set("river_maximum_depth", 1.5)
+	world.set("river_minimum_visible_flow", 16384.0)
+	world.set("river_reference_flow", 32768.0)
+	world.set("river_discharge_scale", 1.5)
+	world.set("river_reference_width", 7.0)
+	world.set("river_reference_depth", 1.5)
 
 	var parameters: Resource = world.call("_create_river_parameters")
 	_handle_terrain3d_deprecation()
 
-	assert_eq(parameters.get("stream_threshold"), 16384.0)
-	assert_eq(parameters.get("channel_threshold"), 32768.0)
-	assert_eq(parameters.get("maximum_width"), 7.0)
-	assert_eq(parameters.get("maximum_depth"), 1.5)
+	assert_eq(parameters.get("minimum_visible_flow"), 16384.0)
+	assert_eq(parameters.get("reference_flow"), 32768.0)
+	assert_eq(parameters.get("discharge_scale"), 1.5)
+	assert_eq(parameters.get("reference_width"), 7.0)
+	assert_eq(parameters.get("reference_depth"), 1.5)
 
 
 func test_world_configures_terrain_data_storage() -> void:
