@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://ct0qogw0y4v3i"]
+
+[ext_resource type="PackedScene" uid="uid://cnxma6qu2exns" path="res://tools/axe/assets/quaternius_axe.glb" id="1_ib58u"]
+[ext_resource type="Script" uid="uid://dwlgpea4c7f65" path="res://tools/axe/axe.gd" id="1_shffb"]
+
+[node name="Axe" type="Node3D" unique_id=1611620617]
+script = ExtResource("1_shffb")
+
+[node name="Mesh" parent="." unique_id=1124880767 instance=ExtResource("1_ib58u")]
+transform = Transform3D(0.25, 0, 0, 0, 0.25, 0, 0, 0, 0.25, 0, 0.5, 0)

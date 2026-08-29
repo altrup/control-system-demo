@@ -1,0 +1,2 @@
+class_name AxeTool
+extends DirectionTargetTool
