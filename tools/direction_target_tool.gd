@@ -36,15 +36,16 @@ func set_control_direction(control_direction: Vector3):
 	_control_direction = control_direction
 
 @export var swing_radius := 2.0
-@export var angular_stiffness := 30.0
-@export var angular_damping := 10.0
-@export var max_angular_acceleration := 50.0
-@export var max_angular_speed := 8.0
 
-@export var roll_stiffness := 30.0
-@export var roll_damping := 10.0
-@export var max_roll_acceleration := 50.0
-@export var max_roll_speed := 8.0
+@export var angular_stiffness := 60.0
+@export var angular_damping := 15.0
+@export var max_angular_acceleration := 120.0
+@export var max_angular_speed := 12.0
+
+@export var roll_stiffness := 20.0
+@export var roll_damping := 9.0
+@export var max_roll_acceleration := 35.0
+@export var max_roll_speed := 4.5
 
 var _angular_velocity := Vector3.ZERO
 var _roll_angular_velocity := 0.0
