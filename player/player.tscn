@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://player/player.gd" id="1_player"]
+[ext_resource type="PackedScene" uid="uid://ct0qogw0y4v3i" path="res://tools/axe/axe.tscn" id="2_axe"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 resource_local_to_scene = true
@@ -27,6 +28,9 @@ shape = SubResource("CapsuleShape3D_player")
 [node name="Body" type="MeshInstance3D" parent="."]
 position = Vector3(0, 0.7, 0)
 mesh = SubResource("CapsuleMesh_body")
+
+[node name="Axe" parent="." instance=ExtResource("2_axe")]
+position = Vector3(0, 1.4, 0)
 
 [node name="Head" type="Node3D" parent="."]
 position = Vector3(0, 1.65, 0)

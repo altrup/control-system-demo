@@ -12,9 +12,13 @@ extends CharacterBody3D
 
 @onready var collision: CollisionShape3D = $CollisionShape3D
 @onready var body: MeshInstance3D = $Body
+@onready var axe: DirectionTargetTool = $Axe
 @onready var head: Node3D = $Head
 
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+var _is_controlling_tool := false
+var _aim_direction := Vector3.ZERO
+var _control_direction := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -24,16 +28,66 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif event.is_action_pressed("tool_primary"):
+		_start_tool_control()
+	elif event.is_action_released("tool_primary") and _is_controlling_tool:
+		_stop_tool_control()
 	elif event is InputEventMouseButton and event.pressed:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	elif event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	elif event is InputEventMouseMotion:
 		var mouse_motion := event as InputEventMouseMotion
-		rotate_y(-mouse_motion.relative.x * mouse_sensitivity)
-		head.rotation.x = clampf(
-			head.rotation.x - mouse_motion.relative.y * mouse_sensitivity,
-			-deg_to_rad(89.0),
-			deg_to_rad(89.0)
-		)
+		if _is_controlling_tool:
+			_update_tool_control(mouse_motion.relative)
+		elif Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			rotate_y(-mouse_motion.relative.x * mouse_sensitivity)
+			head.rotation.x = clampf(
+				head.rotation.x - mouse_motion.relative.y * mouse_sensitivity,
+				-deg_to_rad(89.0),
+				deg_to_rad(89.0)
+			)
+
+
+func _start_tool_control() -> void:
+	_aim_direction = (head.basis * Vector3.FORWARD).normalized()
+	_control_direction = _aim_direction
+	axe.set_aim_direction(_aim_direction)
+	axe.set_control_direction(_control_direction)
+	_is_controlling_tool = true
+
+
+func _stop_tool_control() -> void:
+	var view_direction := (head.basis * Vector3.FORWARD).normalized()
+	rotate_y(atan2(-view_direction.x, -view_direction.z))
+	head.rotation = Vector3(asin(view_direction.y), 0.0, 0.0)
+	axe.clear_aim_direction()
+	_is_controlling_tool = false
+	_aim_direction = Vector3.ZERO
+	_control_direction = Vector3.ZERO
+
+
+func _update_tool_control(mouse_motion: Vector2) -> void:
+	var yawed_direction := Basis(
+		Vector3.UP,
+		-mouse_motion.x * mouse_sensitivity
+	) * _control_direction
+	var horizontal_direction := Vector3(
+		yawed_direction.x,
+		0.0,
+		yawed_direction.z
+	).normalized()
+	var pitch := clampf(
+		asin(yawed_direction.y) - mouse_motion.y * mouse_sensitivity,
+		-deg_to_rad(89.0),
+		deg_to_rad(89.0)
+	)
+	_control_direction = (
+		horizontal_direction * cos(pitch) + Vector3.UP * sin(pitch)
+	).normalized()
+	axe.set_control_direction(_control_direction)
+	head.basis = Basis.looking_at(
+		_aim_direction.slerp(_control_direction, 0.5).normalized(),
+		Vector3.UP
+	)
 
 
 func _physics_process(delta: float) -> void:
@@ -54,7 +108,11 @@ func _physics_process(delta: float) -> void:
 
 
 func movement_direction(input: Vector2) -> Vector3:
-	return (transform.basis * Vector3(input.x, 0.0, input.y)).normalized()
+	var forward := head.global_basis * Vector3.FORWARD
+	forward.y = 0.0
+	forward = forward.normalized()
+	var right := forward.cross(Vector3.UP).normalized()
+	return (right * input.x - forward * input.y).normalized()
 
 
 func apply_jump(is_grounded: bool) -> void:
